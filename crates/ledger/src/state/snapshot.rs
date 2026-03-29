@@ -8,14 +8,14 @@
 
 use std::path::Path;
 
+use crate::LedgerError;
 use crate::effect::history::History;
 use crate::input::entity;
-use crate::input::goal;
-use crate::input::secret;
 use crate::input::entity::Entity;
+use crate::input::goal;
 use crate::input::goal::GoalEntity;
+use crate::input::secret;
 use crate::input::secret::Secret;
-use crate::LedgerError;
 
 // ══════════════════════════════════════════════════════════════════
 // Data model

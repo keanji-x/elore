@@ -13,10 +13,12 @@ use serde::{Deserialize, Serialize};
 /// locked → ready → active → reviewing → approved
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum PhaseStatus {
     /// depends_on phases not yet approved
     Locked,
     /// Ready to checkout (all deps approved)
+    #[default]
     Ready,
     /// Currently being worked on
     Active,
@@ -24,12 +26,6 @@ pub enum PhaseStatus {
     Reviewing,
     /// Approved and permanently locked
     Approved,
-}
-
-impl Default for PhaseStatus {
-    fn default() -> Self {
-        Self::Ready
-    }
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -215,7 +211,7 @@ pub struct LedgerProgress {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ResolverProgress {
     pub status: LayerStatus,
-    pub effects: String,            // "5/8"
+    pub effects: String, // "5/8"
     #[serde(default)]
     pub intents_done: Vec<String>,
     #[serde(default)]
@@ -225,8 +221,8 @@ pub struct ResolverProgress {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExecutorProgress {
     pub status: LayerStatus,
-    pub words: String,              // "3500/5000-8000"
-    pub beats: String,              // "2/3"
+    pub words: String, // "3500/5000-8000"
+    pub beats: String, // "2/3"
     #[serde(default)]
     pub beats_remaining: Vec<BeatPlan>,
 }
@@ -257,7 +253,9 @@ impl Phase {
     pub fn load(phases_dir: &std::path::Path, id: &str) -> Result<Self, crate::LedgerError> {
         let path = phases_dir.join(format!("{id}.yaml"));
         if !path.exists() {
-            return Err(crate::LedgerError::NotFound(format!("Phase '{id}' not found")));
+            return Err(crate::LedgerError::NotFound(format!(
+                "Phase '{id}' not found"
+            )));
         }
         let content = std::fs::read_to_string(&path)?;
         let phase: Phase = serde_yaml::from_str(&content)
@@ -281,10 +279,10 @@ impl Phase {
         if let Ok(entries) = std::fs::read_dir(phases_dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                if path.extension().is_some_and(|e| e == "yaml" || e == "yml") {
-                    if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
-                        ids.push(stem.to_string());
-                    }
+                if path.extension().is_some_and(|e| e == "yaml" || e == "yml")
+                    && let Some(stem) = path.file_stem().and_then(|s| s.to_str())
+                {
+                    ids.push(stem.to_string());
                 }
             }
         }

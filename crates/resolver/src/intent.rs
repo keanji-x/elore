@@ -111,7 +111,9 @@ impl DramaticIntent {
             Self::Confrontation { between, at, .. } => {
                 format!("对峙: {} @ {at}", between.join(" vs "))
             }
-            Self::Reversal { target, trigger, .. } => {
+            Self::Reversal {
+                target, trigger, ..
+            } => {
                 format!("反转: {target} — 触发: {trigger}")
             }
             Self::SuspenseResolution {

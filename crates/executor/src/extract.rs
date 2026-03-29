@@ -4,8 +4,8 @@
 //! for state changes and converts them into `Op`s.
 //! Pattern: `«effect: remove_item(kian, 电磁短刀)»`
 
-use ledger::effect::op::Op;
 use crate::ExecutorError;
+use ledger::effect::op::Op;
 
 /// Annotation marker for effects embedded in text.
 const EFFECT_OPEN: &str = "«effect:";
@@ -61,7 +61,10 @@ mod tests {
         assert_eq!(effects.len(), 1);
         assert_eq!(
             effects[0],
-            Op::RemoveItem { entity: "kian".into(), item: "电磁短刀".into() }
+            Op::RemoveItem {
+                entity: "kian".into(),
+                item: "电磁短刀".into()
+            }
         );
     }
 

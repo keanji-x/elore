@@ -37,7 +37,7 @@ pub fn load_annotations(annotations_dir: &Path, phase: &str) -> Vec<Annotation> 
     let reader = std::io::BufReader::new(file);
     reader
         .lines()
-        .flatten()
+        .map_while(Result::ok)
         .filter_map(|line| serde_json::from_str::<Annotation>(&line).ok())
         .collect()
 }
@@ -74,7 +74,9 @@ pub fn low_beats(annotations: &[Annotation], threshold: u8) -> Vec<(u32, u8, Opt
     let mut worst: std::collections::BTreeMap<u32, (u8, Option<String>)> =
         std::collections::BTreeMap::new();
     for ann in annotations {
-        let entry = worst.entry(ann.beat).or_insert((ann.score, ann.note.clone()));
+        let entry = worst
+            .entry(ann.beat)
+            .or_insert((ann.score, ann.note.clone()));
         if ann.score < entry.0 {
             *entry = (ann.score, ann.note.clone());
         }
@@ -88,7 +90,9 @@ pub fn low_beats(annotations: &[Annotation], threshold: u8) -> Vec<(u32, u8, Opt
 
 /// Check if any annotation has a specific tag.
 pub fn has_tag(annotations: &[Annotation], tag: &str) -> bool {
-    annotations.iter().any(|a| a.tags.contains(&tag.to_string()))
+    annotations
+        .iter()
+        .any(|a| a.tags.contains(&tag.to_string()))
 }
 
 #[cfg(test)]

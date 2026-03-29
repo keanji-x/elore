@@ -11,11 +11,11 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
+use crate::LedgerError;
 use crate::effect::op::Op;
 use crate::input::entity::Entity;
 use crate::input::goal::GoalEntity;
 use crate::input::secret::Secret;
-use crate::LedgerError;
 
 const HISTORY_FILE: &str = "history.jsonl";
 
@@ -73,10 +73,7 @@ impl History {
     /// Append entries to the history file.
     pub fn append(everlore_dir: &Path, entries: &[HistoryEntry]) -> Result<(), LedgerError> {
         let path = everlore_dir.join(HISTORY_FILE);
-        let mut file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&path)?;
+        let mut file = OpenOptions::new().create(true).append(true).open(&path)?;
 
         for entry in entries {
             let json = serde_json::to_string(entry)?;
@@ -238,8 +235,11 @@ impl History {
 
         let history = Self::load(everlore_dir);
         let before_count = history.entries.len();
-        let remaining: Vec<&HistoryEntry> =
-            history.entries.iter().filter(|e| e.chapter != chapter).collect();
+        let remaining: Vec<&HistoryEntry> = history
+            .entries
+            .iter()
+            .filter(|e| e.chapter != chapter)
+            .collect();
         let removed = before_count - remaining.len();
 
         let mut file = fs::File::create(&path)?;
@@ -304,9 +304,30 @@ mod tests {
     fn chapters_in_order() {
         let history = History {
             entries: vec![
-                make_entry("ch01", 1, Op::AddTrait { entity: "a".into(), value: "x".into() }),
-                make_entry("ch02", 1, Op::AddTrait { entity: "a".into(), value: "y".into() }),
-                make_entry("ch01", 2, Op::AddTrait { entity: "a".into(), value: "z".into() }),
+                make_entry(
+                    "ch01",
+                    1,
+                    Op::AddTrait {
+                        entity: "a".into(),
+                        value: "x".into(),
+                    },
+                ),
+                make_entry(
+                    "ch02",
+                    1,
+                    Op::AddTrait {
+                        entity: "a".into(),
+                        value: "y".into(),
+                    },
+                ),
+                make_entry(
+                    "ch01",
+                    2,
+                    Op::AddTrait {
+                        entity: "a".into(),
+                        value: "z".into(),
+                    },
+                ),
             ],
         };
         assert_eq!(history.chapters(), vec!["ch01", "ch02"]);
@@ -316,8 +337,22 @@ mod tests {
     fn next_seq() {
         let history = History {
             entries: vec![
-                make_entry("ch01", 1, Op::AddTrait { entity: "a".into(), value: "x".into() }),
-                make_entry("ch01", 2, Op::AddTrait { entity: "a".into(), value: "y".into() }),
+                make_entry(
+                    "ch01",
+                    1,
+                    Op::AddTrait {
+                        entity: "a".into(),
+                        value: "x".into(),
+                    },
+                ),
+                make_entry(
+                    "ch01",
+                    2,
+                    Op::AddTrait {
+                        entity: "a".into(),
+                        value: "y".into(),
+                    },
+                ),
             ],
         };
         assert_eq!(history.next_seq("ch01"), 3);
@@ -347,8 +382,22 @@ mod tests {
 
         let history = History {
             entries: vec![
-                make_entry("ch01", 1, Op::RemoveItem { entity: "kian".into(), item: "刀".into() }),
-                make_entry("ch01", 2, Op::Move { entity: "kian".into(), location: "oasis".into() }),
+                make_entry(
+                    "ch01",
+                    1,
+                    Op::RemoveItem {
+                        entity: "kian".into(),
+                        item: "刀".into(),
+                    },
+                ),
+                make_entry(
+                    "ch01",
+                    2,
+                    Op::Move {
+                        entity: "kian".into(),
+                        location: "oasis".into(),
+                    },
+                ),
             ],
         };
 
@@ -380,8 +429,22 @@ mod tests {
 
         let history = History {
             entries: vec![
-                make_entry("ch01", 1, Op::AddTrait { entity: "kian".into(), value: "trait_ch01".into() }),
-                make_entry("ch02", 1, Op::AddTrait { entity: "kian".into(), value: "trait_ch02".into() }),
+                make_entry(
+                    "ch01",
+                    1,
+                    Op::AddTrait {
+                        entity: "kian".into(),
+                        value: "trait_ch01".into(),
+                    },
+                ),
+                make_entry(
+                    "ch02",
+                    1,
+                    Op::AddTrait {
+                        entity: "kian".into(),
+                        value: "trait_ch02".into(),
+                    },
+                ),
             ],
         };
 

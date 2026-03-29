@@ -1,8 +1,8 @@
-use std::path::Path;
 use colored::Colorize;
+use std::path::Path;
 
-use ledger::state::snapshot::Snapshot;
 use ledger::effect::diff::SnapshotDiff;
+use ledger::state::snapshot::Snapshot;
 
 pub async fn run(project: &Path, from: &str, to: &str) -> Result<(), Box<dyn std::error::Error>> {
     let entities_dir = project.join(".everlore/entities");
@@ -20,7 +20,10 @@ pub async fn run(project: &Path, from: &str, to: &str) -> Result<(), Box<dyn std
     } else {
         println!("{}", diff.render());
         let changed = diff.changed_entity_ids();
-        println!("影响实体: {}", changed.into_iter().collect::<Vec<_>>().join(", "));
+        println!(
+            "影响实体: {}",
+            changed.into_iter().collect::<Vec<_>>().join(", ")
+        );
     }
 
     Ok(())

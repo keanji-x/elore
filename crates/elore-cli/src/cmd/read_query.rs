@@ -6,10 +6,10 @@
 use std::path::Path;
 
 use colored::Colorize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
-use ledger::state::snapshot::Snapshot;
 use ledger::effect::history::History;
+use ledger::state::snapshot::Snapshot;
 use resolver::drama;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -66,7 +66,9 @@ pub fn read_snapshot(
                     println!("    物品: {}", c.inventory.join(", "));
                 }
                 if !c.relationships.is_empty() {
-                    let rels: Vec<_> = c.relationships.iter()
+                    let rels: Vec<_> = c
+                        .relationships
+                        .iter()
                         .map(|r| format!("{}({})", r.rel, r.target))
                         .collect();
                     println!("    关系: {}", rels.join(", "));
@@ -173,12 +175,17 @@ pub fn read_history(
 
     match format {
         Format::Json => {
-            let arr: Vec<Value> = entries.iter().map(|e| json!({
-                "chapter": e.chapter,
-                "seq": e.seq,
-                "effect": e.effect.describe(),
-                "op": serde_json::to_value(&e.effect).unwrap_or(Value::Null),
-            })).collect();
+            let arr: Vec<Value> = entries
+                .iter()
+                .map(|e| {
+                    json!({
+                        "chapter": e.chapter,
+                        "seq": e.seq,
+                        "effect": e.effect.describe(),
+                        "op": serde_json::to_value(&e.effect).unwrap_or(Value::Null),
+                    })
+                })
+                .collect();
             println!("{}", serde_json::to_string_pretty(&arr)?);
         }
         Format::Human => {
@@ -206,38 +213,71 @@ pub fn read_history(
 // ══════════════════════════════════════════════════════════════════
 
 fn snapshot_to_json(snap: &Snapshot) -> Value {
-    let entities: Vec<Value> = snap.entities.iter().map(|e| {
-        let mut obj = json!({
-            "type": e.entity_type,
-            "id": e.id,
-        });
-        if let Some(name) = &e.name {
-            obj["name"] = json!(name);
-        }
-        if !e.traits.is_empty() { obj["traits"] = json!(e.traits); }
-        if !e.beliefs.is_empty() { obj["beliefs"] = json!(e.beliefs); }
-        if !e.desires.is_empty() { obj["desires"] = json!(e.desires); }
-        if !e.intentions.is_empty() { obj["intentions"] = json!(e.intentions); }
-        if let Some(loc) = &e.location { obj["location"] = json!(loc); }
-        if !e.relationships.is_empty() {
-            obj["relationships"] = json!(e.relationships.iter().map(|r| json!({
-                "target": r.target, "rel": r.rel
-            })).collect::<Vec<_>>());
-        }
-        if !e.inventory.is_empty() { obj["inventory"] = json!(e.inventory); }
-        if !e.properties.is_empty() { obj["properties"] = json!(e.properties); }
-        if !e.connections.is_empty() { obj["connections"] = json!(e.connections); }
-        if !e.tags.is_empty() { obj["tags"] = json!(e.tags); }
-        obj
-    }).collect();
+    let entities: Vec<Value> = snap
+        .entities
+        .iter()
+        .map(|e| {
+            let mut obj = json!({
+                "type": e.entity_type,
+                "id": e.id,
+            });
+            if let Some(name) = &e.name {
+                obj["name"] = json!(name);
+            }
+            if !e.traits.is_empty() {
+                obj["traits"] = json!(e.traits);
+            }
+            if !e.beliefs.is_empty() {
+                obj["beliefs"] = json!(e.beliefs);
+            }
+            if !e.desires.is_empty() {
+                obj["desires"] = json!(e.desires);
+            }
+            if !e.intentions.is_empty() {
+                obj["intentions"] = json!(e.intentions);
+            }
+            if let Some(loc) = &e.location {
+                obj["location"] = json!(loc);
+            }
+            if !e.relationships.is_empty() {
+                obj["relationships"] = json!(
+                    e.relationships
+                        .iter()
+                        .map(|r| json!({
+                            "target": r.target, "rel": r.rel
+                        }))
+                        .collect::<Vec<_>>()
+                );
+            }
+            if !e.inventory.is_empty() {
+                obj["inventory"] = json!(e.inventory);
+            }
+            if !e.properties.is_empty() {
+                obj["properties"] = json!(e.properties);
+            }
+            if !e.connections.is_empty() {
+                obj["connections"] = json!(e.connections);
+            }
+            if !e.tags.is_empty() {
+                obj["tags"] = json!(e.tags);
+            }
+            obj
+        })
+        .collect();
 
-    let secrets: Vec<Value> = snap.secrets.iter().map(|s| json!({
-        "id": s.id,
-        "content": s.content,
-        "known_by": s.known_by,
-        "revealed_to_reader": s.revealed_to_reader,
-        "dramatic_function": format!("{:?}", s.classify()),
-    })).collect();
+    let secrets: Vec<Value> = snap
+        .secrets
+        .iter()
+        .map(|s| {
+            json!({
+                "id": s.id,
+                "content": s.content,
+                "known_by": s.known_by,
+                "revealed_to_reader": s.revealed_to_reader,
+                "dramatic_function": format!("{:?}", s.classify()),
+            })
+        })
+        .collect();
 
     json!({
         "chapter": snap.chapter,
@@ -250,10 +290,7 @@ fn snapshot_to_json(snap: &Snapshot) -> Value {
 // v3: read phase / beats
 // ══════════════════════════════════════════════════════════════════
 
-pub fn read_phase(
-    project: &Path,
-    format: Format,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub fn read_phase(project: &Path, format: Format) -> Result<(), Box<dyn std::error::Error>> {
     let everlore = project.join(".everlore");
     let state = ledger::ProjectState::load(&everlore);
 
@@ -309,8 +346,11 @@ pub fn read_phase(
                 if !c.executor.writing_plan.is_empty() {
                     println!("    beats planned: {}", c.executor.writing_plan.len());
                     for bp in &c.executor.writing_plan {
-                        println!("      - {} ({}字)", bp.label,
-                                 bp.target_words.map_or("?".into(), |w| w.to_string()));
+                        println!(
+                            "      - {} ({}字)",
+                            bp.label,
+                            bp.target_words.map_or("?".into(), |w| w.to_string())
+                        );
                     }
                 }
             }
@@ -350,14 +390,19 @@ pub fn read_beats(
 
     match format {
         Format::Json => {
-            let arr: Vec<Value> = beats.iter().map(|b| json!({
-                "seq": b.seq,
-                "text": b.text,
-                "word_count": b.word_count,
-                "effects": b.effects.iter().map(|e| e.describe()).collect::<Vec<_>>(),
-                "created_by": b.created_by,
-                "revision": b.revision,
-            })).collect();
+            let arr: Vec<Value> = beats
+                .iter()
+                .map(|b| {
+                    json!({
+                        "seq": b.seq,
+                        "text": b.text,
+                        "word_count": b.word_count,
+                        "effects": b.effects.iter().map(|e| e.describe()).collect::<Vec<_>>(),
+                        "created_by": b.created_by,
+                        "revision": b.revision,
+                    })
+                })
+                .collect();
             let response = json!({
                 "phase": phase_id,
                 "beats": arr,
@@ -378,7 +423,10 @@ pub fn read_beats(
                 } else {
                     String::new()
                 };
-                println!("\n  #{}{} ({} 字, by {})", b.seq, rev, b.word_count, b.created_by);
+                println!(
+                    "\n  #{}{} ({} 字, by {})",
+                    b.seq, rev, b.word_count, b.created_by
+                );
                 // Show first 100 chars of text
                 let preview: String = b.text.chars().take(100).collect();
                 println!("  {}", preview.dimmed());
@@ -386,10 +434,17 @@ pub fn read_beats(
                     print!("{}", "...".dimmed());
                 }
                 if !b.effects.is_empty() {
-                    println!("  effects: {:?}", b.effects.iter().map(|e| e.describe()).collect::<Vec<_>>());
+                    println!(
+                        "  effects: {:?}",
+                        b.effects.iter().map(|e| e.describe()).collect::<Vec<_>>()
+                    );
                 }
             }
-            println!("\n  总计: {} beats, {} 字", beats.len(), ledger::Beat::total_words(&beats));
+            println!(
+                "\n  总计: {} beats, {} 字",
+                beats.len(),
+                ledger::Beat::total_words(&beats)
+            );
         }
     }
     Ok(())

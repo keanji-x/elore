@@ -11,8 +11,8 @@ use serde::{Deserialize, Serialize};
 
 use ledger::Op;
 
-use crate::intent::DramaticIntent;
 use crate::ResolverError;
+use crate::intent::DramaticIntent;
 
 // ══════════════════════════════════════════════════════════════════
 // Data model
@@ -132,10 +132,8 @@ pub fn list_drama_chapters(everlore_dir: &Path) -> Vec<String> {
             let is_yaml = path
                 .extension()
                 .is_some_and(|ext| ext == "yaml" || ext == "yml");
-            if is_yaml {
-                if let Some(stem) = path.file_stem() {
-                    chapters.push(stem.to_string_lossy().to_string());
-                }
+            if is_yaml && let Some(stem) = path.file_stem() {
+                chapters.push(stem.to_string_lossy().to_string());
             }
         }
     }
@@ -144,10 +142,7 @@ pub fn list_drama_chapters(everlore_dir: &Path) -> Vec<String> {
 }
 
 /// Save a DramaNode to `.everlore/drama/<chapter>.yaml`.
-pub fn save_drama(
-    everlore_dir: &Path,
-    node: &DramaNode,
-) -> Result<(), ResolverError> {
+pub fn save_drama(everlore_dir: &Path, node: &DramaNode) -> Result<(), ResolverError> {
     let drama_dir = everlore_dir.join("drama");
     std::fs::create_dir_all(&drama_dir)?;
 

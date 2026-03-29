@@ -6,10 +6,10 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::LedgerError;
 use crate::input::entity::{Entity, Relationship};
 use crate::input::goal::{GoalEntity, GoalStatus};
 use crate::input::secret::Secret;
-use crate::LedgerError;
 
 // ══════════════════════════════════════════════════════════════════
 // Op enum
@@ -232,7 +232,9 @@ impl Op {
             Self::RemoveItem { entity, item } => format!("{entity}: 失去物品 \"{item}\""),
             Self::Move { entity, location } => format!("{entity}: 移动至 {location}"),
             Self::AddRel {
-                entity, target, rel,
+                entity,
+                target,
+                rel,
             } => format!("{entity}: 新关系 {rel}({target})"),
             Self::RemoveRel { entity, target } => {
                 format!("{entity}: 断绝与 {target} 的关系")
@@ -389,9 +391,7 @@ impl Op {
                     problem: None,
                 })
             }
-            _ => Err(LedgerError::EffectParse(format!(
-                "Unknown op: {op}"
-            ))),
+            _ => Err(LedgerError::EffectParse(format!("Unknown op: {op}"))),
         }
     }
 }

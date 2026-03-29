@@ -37,7 +37,11 @@ pub fn run(
     let phase_ids: Vec<&String> = if phases_filter.is_empty() {
         state.plan.iter().collect()
     } else {
-        state.plan.iter().filter(|id| phases_filter.contains(id)).collect()
+        state
+            .plan
+            .iter()
+            .filter(|id| phases_filter.contains(id))
+            .collect()
     };
 
     if phase_ids.is_empty() {
@@ -58,7 +62,6 @@ pub fn run(
     let mut included_phases = 0u32;
 
     struct PhaseData {
-        id: String,
         synopsis: Option<String>,
         guidance: Option<String>,
         beats: Vec<Beat>,
@@ -83,7 +86,6 @@ pub fn run(
         included_phases += 1;
 
         phase_data.push(PhaseData {
-            id: phase_id.to_string(),
             synopsis,
             guidance,
             beats,
@@ -138,9 +140,18 @@ pub fn run(
 
     // ── Appendix: Cast List ───────────────────────────────────────
     let entities = entity::load_entities(&entities_dir).unwrap_or_default();
-    let characters: Vec<_> = entities.iter().filter(|e| e.entity_type == "character").collect();
-    let locations: Vec<_> = entities.iter().filter(|e| e.entity_type == "location").collect();
-    let factions: Vec<_> = entities.iter().filter(|e| e.entity_type == "faction").collect();
+    let characters: Vec<_> = entities
+        .iter()
+        .filter(|e| e.entity_type == "character")
+        .collect();
+    let locations: Vec<_> = entities
+        .iter()
+        .filter(|e| e.entity_type == "location")
+        .collect();
+    let factions: Vec<_> = entities
+        .iter()
+        .filter(|e| e.entity_type == "faction")
+        .collect();
 
     if !characters.is_empty() || !locations.is_empty() {
         doc.push_str("## 附录：世界设定\n\n");
@@ -199,7 +210,7 @@ pub fn run(
     if let Some(parent) = out_path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    
+
     std::fs::write(&out_path, &doc)?;
     println!(
         "{} 已生成: {} ({} 字, {} beats)",

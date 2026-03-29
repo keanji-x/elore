@@ -186,10 +186,10 @@ pub fn find_unblocked(entities: &[GoalEntity]) -> Vec<(FlatGoal, String)> {
             continue;
         }
         for blocker in &fg.goal.blocked_by {
-            if let Some(status) = status_map.get(blocker.as_str()) {
-                if **status == GoalStatus::Failed || **status == GoalStatus::Resolved {
-                    result.push((fg.clone(), blocker.clone()));
-                }
+            if let Some(status) = status_map.get(blocker.as_str())
+                && (**status == GoalStatus::Failed || **status == GoalStatus::Resolved)
+            {
+                result.push((fg.clone(), blocker.clone()));
             }
         }
     }
@@ -214,16 +214,16 @@ pub fn find_active_conflicts(entities: &[GoalEntity]) -> Vec<(FlatGoal, FlatGoal
         }
         let my_key = format!("{}/{}", fg.owner, fg.goal.id);
         for conflict_ref in &fg.goal.conflicts_with {
-            if let Some(other) = lookup.get(conflict_ref.as_str()) {
-                if other.goal.status == GoalStatus::Active {
-                    let pair = if my_key < *conflict_ref {
-                        format!("{my_key}|{conflict_ref}")
-                    } else {
-                        format!("{conflict_ref}|{my_key}")
-                    };
-                    if seen.insert(pair) {
-                        result.push((fg.clone(), (*other).clone()));
-                    }
+            if let Some(other) = lookup.get(conflict_ref.as_str())
+                && other.goal.status == GoalStatus::Active
+            {
+                let pair = if my_key < *conflict_ref {
+                    format!("{my_key}|{conflict_ref}")
+                } else {
+                    format!("{conflict_ref}|{my_key}")
+                };
+                if seen.insert(pair) {
+                    result.push((fg.clone(), (*other).clone()));
                 }
             }
         }
@@ -411,9 +411,7 @@ pub fn render_plan(entities: &[GoalEntity]) -> String {
 // ── Helpers ──────────────────────────────────────────────────────
 
 fn quote_id(s: &str) -> String {
-    if s.chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '_')
-    {
+    if s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
         s.to_string()
     } else {
         format!("\"{}\"", s.replace('"', "\\\""))

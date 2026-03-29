@@ -5,8 +5,8 @@
 //! - `FileWriter` — reads a pre-written chapter from disk
 //! - `MockWriter` — for testing
 
-use async_trait::async_trait;
 use crate::ExecutorError;
+use async_trait::async_trait;
 
 /// Result of a writing operation.
 #[derive(Debug, Clone)]

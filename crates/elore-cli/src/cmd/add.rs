@@ -6,14 +6,14 @@
 use std::path::Path;
 
 use colored::Colorize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use ledger::effect::beat::Beat;
 use ledger::effect::history::History;
 use ledger::input::{entity, secret};
+use ledger::state::constraint::check_assertions;
 use ledger::state::phase::Phase;
 use ledger::state::phase_manager::ProjectState;
-use ledger::state::constraint::check_assertions;
 use ledger::state::snapshot::Snapshot;
 
 // ══════════════════════════════════════════════════════════════════
@@ -25,8 +25,7 @@ pub fn add_entity(project: &Path, raw_json: &str) -> Result<(), Box<dyn std::err
     std::fs::create_dir_all(&entities_dir)?;
 
     // Parse and apply defaults
-    let mut v: Value = serde_json::from_str(raw_json)
-        .map_err(|e| format!("JSON 解析失败: {e}"))?;
+    let mut v: Value = serde_json::from_str(raw_json).map_err(|e| format!("JSON 解析失败: {e}"))?;
 
     let id = require_str(&v, "id", "entity")?;
     apply_entity_defaults(&mut v);
@@ -38,31 +37,36 @@ pub fn add_entity(project: &Path, raw_json: &str) -> Result<(), Box<dyn std::err
     let _secret_ids: Vec<&str> = existing_secrets.iter().map(|s| s.id.as_str()).collect();
 
     // Check location exists
-    if let Some(loc) = v.get("location").and_then(|l| l.as_str()) {
-        if !loc.is_empty() && loc != "null" && !existing_ids.contains(&loc) {
-            return Err(format!(
-                "location '{loc}' 不存在 — 请先创建该地点实体\n  \
+    if let Some(loc) = v.get("location").and_then(|l| l.as_str())
+        && !loc.is_empty()
+        && loc != "null"
+        && !existing_ids.contains(&loc)
+    {
+        return Err(format!(
+            "location '{loc}' 不存在 — 请先创建该地点实体\n  \
                  已存在的实体: {}",
-                if existing_ids.is_empty() {
-                    "(空)".to_string()
-                } else {
-                    existing_ids.join(", ")
-                }
-            ).into());
-        }
+            if existing_ids.is_empty() {
+                "(空)".to_string()
+            } else {
+                existing_ids.join(", ")
+            }
+        )
+        .into());
     }
 
     // Check relationship targets exist
     if let Some(rels) = v.get("relationships").and_then(|r| r.as_array()) {
         for rel in rels {
-            if let Some(target) = rel.get("target").and_then(|t| t.as_str()) {
-                if !existing_ids.contains(&target) && target != id.as_str() {
-                    return Err(format!(
-                        "relationship target '{target}' 不存在 — 请先创建该实体\n  \
+            if let Some(target) = rel.get("target").and_then(|t| t.as_str())
+                && !existing_ids.contains(&target)
+                && target != id.as_str()
+            {
+                return Err(format!(
+                    "relationship target '{target}' 不存在 — 请先创建该实体\n  \
                          已存在的实体: {}",
-                        existing_ids.join(", ")
-                    ).into());
-                }
+                    existing_ids.join(", ")
+                )
+                .into());
             }
         }
     }
@@ -83,8 +87,17 @@ pub fn add_entity(project: &Path, raw_json: &str) -> Result<(), Box<dyn std::err
     std::fs::write(&path, content)?;
 
     let action = if exists { "更新" } else { "创建" };
-    let entity_type = final_v.get("type").and_then(|t| t.as_str()).unwrap_or("entity");
-    println!("{} {} {} → {}", "✓".green().bold(), action, entity_type.cyan(), id.bold());
+    let entity_type = final_v
+        .get("type")
+        .and_then(|t| t.as_str())
+        .unwrap_or("entity");
+    println!(
+        "{} {} {} → {}",
+        "✓".green().bold(),
+        action,
+        entity_type.cyan(),
+        id.bold()
+    );
     println!("  {}", path.display());
     Ok(())
 }
@@ -94,9 +107,12 @@ pub fn add_entity(project: &Path, raw_json: &str) -> Result<(), Box<dyn std::err
 ///
 /// This removes the need to manually order entities: location before
 /// character, etc. Just pass them all at once.
-pub fn add_entities_batch(project: &Path, raw_json: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let arr: Vec<Value> = serde_json::from_str(raw_json)
-        .map_err(|e| format!("JSON 解析失败 (期望 array): {e}"))?;
+pub fn add_entities_batch(
+    project: &Path,
+    raw_json: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let arr: Vec<Value> =
+        serde_json::from_str(raw_json).map_err(|e| format!("JSON 解析失败 (期望 array): {e}"))?;
 
     if arr.is_empty() {
         println!("{} 空 array，无实体创建", "⚠".yellow());
@@ -104,8 +120,13 @@ pub fn add_entities_batch(project: &Path, raw_json: &str) -> Result<(), Box<dyn 
     }
 
     // Collect all IDs from the batch
-    let ids: Vec<String> = arr.iter()
-        .filter_map(|v| v.get("id").and_then(|id| id.as_str()).map(|s| s.to_string()))
+    let ids: Vec<String> = arr
+        .iter()
+        .filter_map(|v| {
+            v.get("id")
+                .and_then(|id| id.as_str())
+                .map(|s| s.to_string())
+        })
         .collect();
 
     if ids.len() != arr.len() {
@@ -119,18 +140,20 @@ pub fn add_entities_batch(project: &Path, raw_json: &str) -> Result<(), Box<dyn 
         let id = v["id"].as_str().unwrap().to_string();
         let mut entity_deps = Vec::new();
 
-        if let Some(loc) = v.get("location").and_then(|l| l.as_str()) {
-            if !loc.is_empty() && loc != "null" && ids.contains(&loc.to_string()) {
-                entity_deps.push(loc.to_string());
-            }
+        if let Some(loc) = v.get("location").and_then(|l| l.as_str())
+            && !loc.is_empty()
+            && loc != "null"
+            && ids.contains(&loc.to_string())
+        {
+            entity_deps.push(loc.to_string());
         }
 
         if let Some(rels) = v.get("relationships").and_then(|r| r.as_array()) {
             for rel in rels {
-                if let Some(target) = rel.get("target").and_then(|t| t.as_str()) {
-                    if ids.contains(&target.to_string()) {
-                        entity_deps.push(target.to_string());
-                    }
+                if let Some(target) = rel.get("target").and_then(|t| t.as_str())
+                    && ids.contains(&target.to_string())
+                {
+                    entity_deps.push(target.to_string());
                 }
             }
         }
@@ -139,10 +162,8 @@ pub fn add_entities_batch(project: &Path, raw_json: &str) -> Result<(), Box<dyn 
     }
 
     // Kahn's algorithm: topological sort
-    let mut in_degree: std::collections::HashMap<&str, usize> = ids.iter()
-        .map(|id| (id.as_str(), 0))
-        .collect();
-
+    let mut in_degree: std::collections::HashMap<&str, usize> =
+        ids.iter().map(|id| (id.as_str(), 0)).collect();
 
     // Build reverse: for each dep → list of nodes that need it first
     let mut reverse: std::collections::HashMap<&str, Vec<&str>> = std::collections::HashMap::new();
@@ -153,7 +174,8 @@ pub fn add_entities_batch(project: &Path, raw_json: &str) -> Result<(), Box<dyn 
         }
     }
 
-    let mut queue: std::collections::VecDeque<&str> = in_degree.iter()
+    let mut queue: std::collections::VecDeque<&str> = in_degree
+        .iter()
         .filter(|(_, d)| **d == 0)
         .map(|(id, _)| *id)
         .collect();
@@ -184,7 +206,11 @@ pub fn add_entities_batch(project: &Path, raw_json: &str) -> Result<(), Box<dyn 
     }
 
     // Create in topological order
-    println!("{} 批量创建 {} 个实体 (自动排序)", "→".cyan(), sorted_ids.len());
+    println!(
+        "{} 批量创建 {} 个实体 (自动排序)",
+        "→".cyan(),
+        sorted_ids.len()
+    );
     for id in &sorted_ids {
         let v = value_map[*id];
         let json = serde_json::to_string(v)?;
@@ -194,14 +220,12 @@ pub fn add_entities_batch(project: &Path, raw_json: &str) -> Result<(), Box<dyn 
     Ok(())
 }
 
-
 pub fn add_drama(project: &Path, raw_json: &str) -> Result<(), Box<dyn std::error::Error>> {
     let everlore = project.join(".everlore");
     let drama_dir = everlore.join("drama");
     std::fs::create_dir_all(&drama_dir)?;
 
-    let mut v: Value = serde_json::from_str(raw_json)
-        .map_err(|e| format!("JSON 解析失败: {e}"))?;
+    let mut v: Value = serde_json::from_str(raw_json).map_err(|e| format!("JSON 解析失败: {e}"))?;
 
     let chapter = require_str(&v, "chapter", "drama")?;
     apply_drama_defaults(&mut v);
@@ -218,39 +242,33 @@ pub fn add_drama(project: &Path, raw_json: &str) -> Result<(), Box<dyn std::erro
             // Check between[] members
             if let Some(between) = intent.get("between").and_then(|b| b.as_array()) {
                 for member in between {
-                    if let Some(id) = member.as_str() {
-                        if !entity_ids.contains(&id) {
-                            return Err(format!(
-                                "戏剧意图引用了不存在的实体 '{id}'"
-                            ).into());
-                        }
+                    if let Some(id) = member.as_str()
+                        && !entity_ids.contains(&id)
+                    {
+                        return Err(format!("戏剧意图引用了不存在的实体 '{id}'").into());
                     }
                 }
             }
             // Check at location
-            if let Some(at) = intent.get("at").and_then(|a| a.as_str()) {
-                if !entity_ids.contains(&at) {
-                    return Err(format!(
-                        "戏剧意图引用了不存在的地点 '{at}'"
-                    ).into());
-                }
+            if let Some(at) = intent.get("at").and_then(|a| a.as_str())
+                && !entity_ids.contains(&at)
+            {
+                return Err(format!("戏剧意图引用了不存在的地点 '{at}'").into());
             }
             // Check secret ref
-            if let Some(sec) = intent.get("secret").and_then(|s| s.as_str()) {
-                if !secret_ids.contains(&sec) {
-                    return Err(format!(
-                        "戏剧意图引用了不存在的秘密 '{sec}'"
-                    ).into());
-                }
+            if let Some(sec) = intent.get("secret").and_then(|s| s.as_str())
+                && !secret_ids.contains(&sec)
+            {
+                return Err(format!("戏剧意图引用了不存在的秘密 '{sec}'").into());
             }
         }
     }
 
     // Check POV entity
-    if let Some(pov) = v.pointer("/director_notes/pov").and_then(|p| p.as_str()) {
-        if !entity_ids.contains(&pov) {
-            return Err(format!("POV 实体 '{pov}' 不存在").into());
-        }
+    if let Some(pov) = v.pointer("/director_notes/pov").and_then(|p| p.as_str())
+        && !entity_ids.contains(&pov)
+    {
+        return Err(format!("POV 实体 '{pov}' 不存在").into());
     }
 
     // Upsert as YAML
@@ -269,7 +287,12 @@ pub fn add_drama(project: &Path, raw_json: &str) -> Result<(), Box<dyn std::erro
     std::fs::write(&path, yaml)?;
 
     let action = if exists { "更新" } else { "创建" };
-    println!("{} {} drama → {}", "✓".green().bold(), action, chapter.bold());
+    println!(
+        "{} {} drama → {}",
+        "✓".green().bold(),
+        action,
+        chapter.bold()
+    );
     println!("  {}", path.display());
     Ok(())
 }
@@ -278,8 +301,7 @@ pub fn add_secret(project: &Path, raw_json: &str) -> Result<(), Box<dyn std::err
     let entities_dir = project.join(".everlore/entities");
     std::fs::create_dir_all(&entities_dir)?;
 
-    let mut v: Value = serde_json::from_str(raw_json)
-        .map_err(|e| format!("JSON 解析失败: {e}"))?;
+    let mut v: Value = serde_json::from_str(raw_json).map_err(|e| format!("JSON 解析失败: {e}"))?;
 
     let id = require_str(&v, "id", "secret")?;
     require_str(&v, "content", "secret")?;
@@ -291,12 +313,10 @@ pub fn add_secret(project: &Path, raw_json: &str) -> Result<(), Box<dyn std::err
 
     if let Some(known_by) = v.get("known_by").and_then(|k| k.as_array()) {
         for member in known_by {
-            if let Some(eid) = member.as_str() {
-                if !entity_ids.contains(&eid) {
-                    return Err(format!(
-                        "known_by 引用了不存在的实体 '{eid}'"
-                    ).into());
-                }
+            if let Some(eid) = member.as_str()
+                && !entity_ids.contains(&eid)
+            {
+                return Err(format!("known_by 引用了不存在的实体 '{eid}'").into());
             }
         }
     }
@@ -316,9 +336,9 @@ pub fn add_secret(project: &Path, raw_json: &str) -> Result<(), Box<dyn std::err
         .ok_or("secrets.yaml 格式错误: 缺少 secrets 数组")?;
 
     // Upsert by id
-    let pos = arr.iter().position(|s| {
-        s.get("id").and_then(|i| i.as_str()) == Some(&id)
-    });
+    let pos = arr
+        .iter()
+        .position(|s| s.get("id").and_then(|i| i.as_str()) == Some(&id));
 
     let action = if let Some(idx) = pos {
         let old = arr[idx].clone();
@@ -351,7 +371,11 @@ fn apply_entity_defaults(v: &mut Value) {
     set_default(v, "inventory", json!([]));
     set_default(v, "tags", json!(["active"]));
     // type-specific defaults
-    match v.get("type").and_then(|t| t.as_str()).unwrap_or("character") {
+    match v
+        .get("type")
+        .and_then(|t| t.as_str())
+        .unwrap_or("character")
+    {
         "location" => {
             set_default(v, "properties", json!([]));
             set_default(v, "connections", json!([]));
@@ -366,16 +390,24 @@ fn apply_entity_defaults(v: &mut Value) {
 
 fn apply_drama_defaults(v: &mut Value) {
     set_default(v, "dramatic_intents", json!([]));
-    set_default(v, "pacing", json!({
-        "build_up": 0.4,
-        "climax": 0.4,
-        "resolution": 0.2
-    }));
-    set_default(v, "director_notes", json!({
-        "required_effects": [],
-        "suggested_effects": [],
-        "highlights": []
-    }));
+    set_default(
+        v,
+        "pacing",
+        json!({
+            "build_up": 0.4,
+            "climax": 0.4,
+            "resolution": 0.2
+        }),
+    );
+    set_default(
+        v,
+        "director_notes",
+        json!({
+            "required_effects": [],
+            "suggested_effects": [],
+            "highlights": []
+        }),
+    );
 }
 
 fn apply_secret_defaults(v: &mut Value) {
@@ -390,10 +422,10 @@ fn apply_secret_defaults(v: &mut Value) {
 
 /// Set a field only if it's missing.
 fn set_default(v: &mut Value, key: &str, default: Value) {
-    if v.get(key).is_none() {
-        if let Value::Object(map) = v {
-            map.insert(key.to_string(), default);
-        }
+    if v.get(key).is_none()
+        && let Value::Object(map) = v
+    {
+        map.insert(key.to_string(), default);
     }
 }
 
@@ -424,14 +456,13 @@ pub fn add_phase(project: &Path, raw_json: &str) -> Result<(), Box<dyn std::erro
     let phases_dir = everlore.join("phases");
     std::fs::create_dir_all(&phases_dir)?;
 
-    let v: Value = serde_json::from_str(raw_json)
-        .map_err(|e| format!("JSON 解析失败: {e}"))?;
+    let v: Value = serde_json::from_str(raw_json).map_err(|e| format!("JSON 解析失败: {e}"))?;
 
     let id = require_str(&v, "id", "phase")?;
 
     // Build Phase struct — serde handles defaults
-    let phase: Phase = serde_json::from_value(v.clone())
-        .map_err(|e| format!("Phase 解析失败: {e}"))?;
+    let phase: Phase =
+        serde_json::from_value(v.clone()).map_err(|e| format!("Phase 解析失败: {e}"))?;
 
     // Save definition
     phase.save(&phases_dir)?;
@@ -442,7 +473,12 @@ pub fn add_phase(project: &Path, raw_json: &str) -> Result<(), Box<dyn std::erro
     state.save(&everlore)?;
 
     let status = &state.phases[&id].status;
-    println!("{} 创建 phase → {} ({:?})", "✓".green().bold(), id.cyan().bold(), status);
+    println!(
+        "{} 创建 phase → {} ({:?})",
+        "✓".green().bold(),
+        id.cyan().bold(),
+        status
+    );
     if let Some(syn) = &phase.synopsis {
         println!("  {}", syn.dimmed());
     }
@@ -457,14 +493,14 @@ pub fn add_beat(project: &Path, raw_json: &str) -> Result<(), Box<dyn std::error
     std::fs::create_dir_all(&beats_dir)?;
 
     let state = ProjectState::load(&everlore);
-    let phase_id = state.active_phase()
+    let phase_id = state
+        .active_phase()
         .ok_or("没有活跃的 phase — 请先 `elore checkout <phase_id>`")?
         .to_string();
 
     let phase = Phase::load(&phases_dir, &phase_id)?;
 
-    let v: Value = serde_json::from_str(raw_json)
-        .map_err(|e| format!("JSON 解析失败: {e}"))?;
+    let v: Value = serde_json::from_str(raw_json).map_err(|e| format!("JSON 解析失败: {e}"))?;
 
     let text = require_str(&v, "text", "beat")?;
     let word_count = Beat::count_words(&text);
@@ -488,7 +524,8 @@ pub fn add_beat(project: &Path, raw_json: &str) -> Result<(), Box<dyn std::error
         vec![]
     };
 
-    let created_by = v.get("created_by")
+    let created_by = v
+        .get("created_by")
         .and_then(|c| c.as_str())
         .unwrap_or("ai")
         .to_string();
@@ -496,13 +533,12 @@ pub fn add_beat(project: &Path, raw_json: &str) -> Result<(), Box<dyn std::error
     // ── Step 1: Check L1 invariants BEFORE writing anything to disk ──
     // Snapshot is built from genesis + existing effects; the new beat's
     // effects don't need to be committed first for invariant checking.
-    let snap = Snapshot::build(&phase_id, &entities_dir, &everlore)
-        .map_err(|e| {
-            format!(
-                "Snapshot 构建失败: {e}\n\
+    let snap = Snapshot::build(&phase_id, &entities_dir, &everlore).map_err(|e| {
+        format!(
+            "Snapshot 构建失败: {e}\n\
                  提示: 运行 `elore read snapshot {phase_id} --format json` 检查实体列表"
-            )
-        })?;
+        )
+    })?;
 
     let (inv_ok, inv_failures) = check_assertions(&snap, &phase.constraints.ledger.invariants);
     if !inv_ok {
@@ -552,10 +588,19 @@ pub fn add_beat(project: &Path, raw_json: &str) -> Result<(), Box<dyn std::error
     state.update_progress(all_beats.len() as u32, total_words, total_effects);
     state.save(&everlore)?;
 
-    println!("{} beat #{} ({} 字, {} effects)",
-             "✓".green().bold(), seq, word_count, effects.len());
-    println!("  phase: {} — 累计: {} 字, {} beats",
-             phase_id.cyan(), total_words, all_beats.len());
+    println!(
+        "{} beat #{} ({} 字, {} effects)",
+        "✓".green().bold(),
+        seq,
+        word_count,
+        effects.len()
+    );
+    println!(
+        "  phase: {} — 累计: {} 字, {} beats",
+        phase_id.cyan(),
+        total_words,
+        all_beats.len()
+    );
     Ok(())
 }
 
@@ -563,20 +608,22 @@ pub fn add_note(project: &Path, raw_json: &str) -> Result<(), Box<dyn std::error
     let everlore = project.join(".everlore");
     let annotations_dir = everlore.join("annotations");
 
-    let v: Value = serde_json::from_str(raw_json)
-        .map_err(|e| format!("JSON 解析失败: {e}"))?;
+    let v: Value = serde_json::from_str(raw_json).map_err(|e| format!("JSON 解析失败: {e}"))?;
 
     let state = ProjectState::load(&everlore);
-    let phase_id = state.active_phase()
-        .ok_or("没有活跃的 phase")?
-        .to_string();
+    let phase_id = state.active_phase().ok_or("没有活跃的 phase")?.to_string();
 
-    let ann: evaluator::annotation::Annotation = serde_json::from_value(v)
-        .map_err(|e| format!("Annotation 解析失败: {e}"))?;
+    let ann: evaluator::annotation::Annotation =
+        serde_json::from_value(v).map_err(|e| format!("Annotation 解析失败: {e}"))?;
 
     evaluator::annotation::add_annotation(&annotations_dir, &phase_id, &ann)?;
 
-    println!("{} 标注 beat #{} — score: {}, tags: {:?}",
-             "✓".green().bold(), ann.beat, ann.score, ann.tags);
+    println!(
+        "{} 标注 beat #{} — score: {}, tags: {:?}",
+        "✓".green().bold(),
+        ann.beat,
+        ann.score,
+        ann.tags
+    );
     Ok(())
 }

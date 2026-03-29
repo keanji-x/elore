@@ -1,5 +1,5 @@
-use std::path::Path;
 use colored::Colorize;
+use std::path::Path;
 
 use ledger::state::snapshot::Snapshot;
 use resolver::drama;
@@ -19,7 +19,11 @@ pub async fn run(project: &Path, chapter: &str) -> Result<(), Box<dyn std::error
     if !drama_node.dramatic_intents.is_empty() {
         println!("\nDrama intents:");
         for (i, intent) in drama_node.dramatic_intents.iter().enumerate() {
-            let status = if verdict.is_accept() { "✓".green() } else { "?".yellow() };
+            let status = if verdict.is_accept() {
+                "✓".green()
+            } else {
+                "?".yellow()
+            };
             println!("  {status} {}. {}", i + 1, intent.summary());
         }
     } else {

@@ -1,8 +1,8 @@
-use std::path::Path;
 use colored::Colorize;
+use std::path::Path;
 
-use ledger::state::snapshot::Snapshot;
 use ledger::state::graph::WorldGraph;
+use ledger::state::snapshot::Snapshot;
 
 use ledger::effect::history::History;
 use resolver::drama;
@@ -20,8 +20,12 @@ pub async fn run(project: &Path, chapter: &str) -> Result<(), Box<dyn std::error
         let name = c.name.as_deref().unwrap_or(&c.id);
         let loc = c.location.as_deref().unwrap_or("?");
         println!("  {} ({}) @ {}", name.bold(), c.id, loc);
-        if !c.traits.is_empty() { println!("    特质: {}", c.traits.join(", ")); }
-        if !c.inventory.is_empty() { println!("    物品: {}", c.inventory.join(", ")); }
+        if !c.traits.is_empty() {
+            println!("    特质: {}", c.traits.join(", "));
+        }
+        if !c.inventory.is_empty() {
+            println!("    物品: {}", c.inventory.join(", "));
+        }
     }
 
     println!("\n地点 ({}):", snap.locations().len());
@@ -39,7 +43,11 @@ pub async fn run(project: &Path, chapter: &str) -> Result<(), Box<dyn std::error
     }
 
     let graph = WorldGraph::build(&snap.entities);
-    println!("\n图索引: {} 节点, {} 边", graph.node_count(), graph.edge_count());
+    println!(
+        "\n图索引: {} 节点, {} 边",
+        graph.node_count(),
+        graph.edge_count()
+    );
 
     Ok(())
 }
@@ -82,7 +90,12 @@ pub async fn write_prompt(
     let prompt_path = drafts.join(format!("{chapter}_prompt.md"));
     std::fs::write(&prompt_path, &prompt.rendered)?;
 
-    println!("{}", format!("✓ Prompt 已生成: {}", prompt_path.display()).green().bold());
+    println!(
+        "{}",
+        format!("✓ Prompt 已生成: {}", prompt_path.display())
+            .green()
+            .bold()
+    );
     println!("  hash: {}", &prompt.content_hash[..16]);
     if let Some(p) = &prompt.pov {
         println!("  POV: {}", p.cyan());
@@ -102,10 +115,17 @@ pub async fn run_pipeline(
     // Phase 1: Snapshot
     println!("\n{}", "Phase 1: Engine (Snapshot)".yellow().bold());
     let snap = build_snapshot(project, chapter)?;
-    println!("  ✓ {} 实体, {} 秘密", snap.entities.len(), snap.secrets.len());
+    println!(
+        "  ✓ {} 实体, {} 秘密",
+        snap.entities.len(),
+        snap.secrets.len()
+    );
 
     // Phase 2: Validate + Prompt
-    println!("\n{}", "Phase 2: Director (Validate + Prompt)".yellow().bold());
+    println!(
+        "\n{}",
+        "Phase 2: Director (Validate + Prompt)".yellow().bold()
+    );
     let everlore = project.join(".everlore");
     let mut drama_node = drama::load_drama(&everlore, chapter)?;
     if let Some(p) = pov {

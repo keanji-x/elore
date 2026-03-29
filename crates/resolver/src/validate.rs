@@ -4,8 +4,8 @@
 //! support the declared dramatic intents. If validation fails, it
 //! returns the list of unmet intents with reasons.
 
-use ledger::state::reasoning::ReasoningResult;
 use ledger::Snapshot;
+use ledger::state::reasoning::ReasoningResult;
 
 use crate::drama::DramaNode;
 use crate::intent::DramaticIntent;
@@ -20,9 +20,7 @@ pub enum Verdict {
     /// All intents are satisfiable.
     Accept,
     /// Some intents cannot be satisfied with the current world state.
-    Reject {
-        unmet: Vec<UnmetIntent>,
-    },
+    Reject { unmet: Vec<UnmetIntent> },
 }
 
 /// An intent that cannot be satisfied with the current snapshot.
@@ -130,9 +128,7 @@ fn check_intent(
             None
         }
 
-        DramaticIntent::SecretReveal {
-            secret, to, ..
-        } => {
+        DramaticIntent::SecretReveal { secret, to, .. } => {
             // Check secret exists
             if snapshot.secret(secret).is_none() {
                 return Some(UnmetIntent {
@@ -146,10 +142,7 @@ fn check_intent(
             if all_known {
                 return Some(UnmetIntent {
                     intent: intent.clone(),
-                    reason: format!(
-                        "秘密 {secret} 已被 {} 知道, 没有揭示价值",
-                        to.join(", ")
-                    ),
+                    reason: format!("秘密 {secret} 已被 {} 知道, 没有揭示价值", to.join(", ")),
                 });
             }
             None

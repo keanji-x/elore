@@ -5,11 +5,11 @@
 
 use sha2::{Digest, Sha256};
 
+use ledger::Snapshot;
 use ledger::input::entity::Entity;
 use ledger::input::goal;
 use ledger::input::secret::Secret;
 use ledger::state::reasoning::ReasoningResult;
-use ledger::Snapshot;
 
 use crate::drama::DramaNode;
 
@@ -59,10 +59,18 @@ fn render_prompt(
     // Header
     p.push_str("# 小说写作上下文\n\n");
     p.push_str(&format!("当前章节: {}\n", drama.chapter));
-    if let Some(v) = pov { p.push_str(&format!("主视角 (POV): {v}\n")); }
-    if let Some(t) = &notes.tone { p.push_str(&format!("基调: {t}\n")); }
-    if let Some(a) = &notes.tone_arc { p.push_str(&format!("情绪弧: {a}\n")); }
-    if let Some(wc) = notes.word_count { p.push_str(&format!("目标字数: ~{wc}\n")); }
+    if let Some(v) = pov {
+        p.push_str(&format!("主视角 (POV): {v}\n"));
+    }
+    if let Some(t) = &notes.tone {
+        p.push_str(&format!("基调: {t}\n"));
+    }
+    if let Some(a) = &notes.tone_arc {
+        p.push_str(&format!("情绪弧: {a}\n"));
+    }
+    if let Some(wc) = notes.word_count {
+        p.push_str(&format!("目标字数: ~{wc}\n"));
+    }
     p.push('\n');
 
     if let Some(s) = prev_summary {
@@ -88,16 +96,22 @@ fn render_prompt(
     // Highlights & pacing
     if !notes.highlights.is_empty() {
         p.push_str("## 关键节拍\n\n");
-        for h in &notes.highlights { p.push_str(&format!("★ {h}\n")); }
+        for h in &notes.highlights {
+            p.push_str(&format!("★ {h}\n"));
+        }
         p.push('\n');
     }
     p.push_str(&format!(
         "## 节奏\n\n铺垫 {:.0}% → 高潮 {:.0}% → 收尾 {:.0}%\n\n",
-        drama.pacing.build_up * 100.0, drama.pacing.climax * 100.0, drama.pacing.resolution * 100.0,
+        drama.pacing.build_up * 100.0,
+        drama.pacing.climax * 100.0,
+        drama.pacing.resolution * 100.0,
     ));
 
     // Characters
-    for c in snapshot.characters() { render_character(&mut p, c, pov); }
+    for c in snapshot.characters() {
+        render_character(&mut p, c, pov);
+    }
 
     // Goals, conflicts, suspense
     render_goals(&mut p, snapshot, pov);
@@ -109,38 +123,50 @@ fn render_prompt(
     for loc in snapshot.locations() {
         let name = loc.name.as_deref().unwrap_or(&loc.id);
         p.push_str(&format!("- **{name}** ({})", loc.id));
-        if !loc.properties.is_empty() { p.push_str(&format!(": {}", loc.properties.join(", "))); }
+        if !loc.properties.is_empty() {
+            p.push_str(&format!(": {}", loc.properties.join(", ")));
+        }
         p.push('\n');
     }
 
     // Reasoning
-    if let Some(r) = reasoning {
-        if r.total_facts > 0 {
-            p.push_str("\n## 推理结果\n\n");
-            for (pred, rows) in &r.predicates {
-                if rows.is_empty() { continue; }
-                p.push_str(&format!("### {pred}\n"));
-                for row in rows { p.push_str(&format!("- {}\n", row.join(", "))); }
-                p.push('\n');
+    if let Some(r) = reasoning
+        && r.total_facts > 0
+    {
+        p.push_str("\n## 推理结果\n\n");
+        for (pred, rows) in &r.predicates {
+            if rows.is_empty() {
+                continue;
             }
+            p.push_str(&format!("### {pred}\n"));
+            for row in rows {
+                p.push_str(&format!("- {}\n", row.join(", ")));
+            }
+            p.push('\n');
         }
     }
 
     // Required/suggested effects
     if !notes.required_effects.is_empty() {
         p.push_str("## 必须体现的状态变化\n\n");
-        for op in &notes.required_effects { p.push_str(&format!("- ✓ {}\n", op.describe())); }
+        for op in &notes.required_effects {
+            p.push_str(&format!("- ✓ {}\n", op.describe()));
+        }
         p.push('\n');
     }
     if !notes.suggested_effects.is_empty() {
         p.push_str("## 建议的状态变化\n\n");
-        for op in &notes.suggested_effects { p.push_str(&format!("- ~ {}\n", op.describe())); }
+        for op in &notes.suggested_effects {
+            p.push_str(&format!("- ~ {}\n", op.describe()));
+        }
         p.push('\n');
     }
 
     // Writing instructions
     p.push_str("## 写作要求\n\n");
-    if let Some(v) = pov { p.push_str(&format!("0. 视角限制: 严格遵循 {v} 的主视角\n")); }
+    if let Some(v) = pov {
+        p.push_str(&format!("0. 视角限制: 严格遵循 {v} 的主视角\n"));
+    }
     p.push_str("1. 遵守推理结果\n2. 角色行为符合 BDI\n3. 延续前情线索\n4. 围绕戏剧性目标展开\n5. 中文, 武侠/玄幻文风\n");
     p
 }
@@ -153,57 +179,93 @@ fn render_character(p: &mut String, c: &Entity, pov: Option<&str>) {
     } else {
         p.push_str(&format!("### {name} ({}) [非视角角色]\n", c.id));
     }
-    if !c.traits.is_empty() { p.push_str(&format!("- 特质: {}\n", c.traits.join(", "))); }
-    if let Some(loc) = &c.location { p.push_str(&format!("- 位置: {loc}\n")); }
+    if !c.traits.is_empty() {
+        p.push_str(&format!("- 特质: {}\n", c.traits.join(", ")));
+    }
+    if let Some(loc) = &c.location {
+        p.push_str(&format!("- 位置: {loc}\n"));
+    }
     if is_pov {
-        if !c.beliefs.is_empty() { p.push_str(&format!("- 信念: {}\n", c.beliefs.join(", "))); }
-        if !c.desires.is_empty() { p.push_str(&format!("- 欲望: {}\n", c.desires.join(", "))); }
+        if !c.beliefs.is_empty() {
+            p.push_str(&format!("- 信念: {}\n", c.beliefs.join(", ")));
+        }
+        if !c.desires.is_empty() {
+            p.push_str(&format!("- 欲望: {}\n", c.desires.join(", ")));
+        }
     } else if !c.beliefs.is_empty() || !c.desires.is_empty() {
         p.push_str("- BDI: [已隐藏]\n");
     }
-    if !c.inventory.is_empty() { p.push_str(&format!("- 物品: {}\n", c.inventory.join(", "))); }
+    if !c.inventory.is_empty() {
+        p.push_str(&format!("- 物品: {}\n", c.inventory.join(", ")));
+    }
     if !c.relationships.is_empty() {
-        let rels: Vec<String> = c.relationships.iter().map(|r| format!("{}({})", r.rel, r.target)).collect();
+        let rels: Vec<String> = c
+            .relationships
+            .iter()
+            .map(|r| format!("{}({})", r.rel, r.target))
+            .collect();
         p.push_str(&format!("- 关系: {}\n", rels.join(", ")));
     }
     p.push('\n');
 }
 
 fn render_goals(p: &mut String, snapshot: &Snapshot, pov: Option<&str>) {
-    if snapshot.goal_entities.is_empty() { return; }
+    if snapshot.goal_entities.is_empty() {
+        return;
+    }
     let pov_goals: Vec<_> = if let Some(v) = pov {
-        snapshot.goal_entities.iter().filter(|ge| ge.id == v).collect()
+        snapshot
+            .goal_entities
+            .iter()
+            .filter(|ge| ge.id == v)
+            .collect()
     } else {
         snapshot.goal_entities.iter().collect()
     };
     if !pov_goals.is_empty() {
         p.push_str("## 角色目标\n\n");
-        for ge in &pov_goals { p.push_str(&goal::render_goal_tree(ge)); p.push('\n'); }
+        for ge in &pov_goals {
+            p.push_str(&goal::render_goal_tree(ge));
+            p.push('\n');
+        }
     }
     let conflicts = goal::find_active_conflicts(&snapshot.goal_entities);
     if !conflicts.is_empty() {
         p.push_str("## 活跃冲突\n\n");
         for (a, b) in &conflicts {
-            p.push_str(&format!("- ⚔ {}/{} ↔ {}/{}\n", a.owner, a.goal.id, b.owner, b.goal.id));
+            p.push_str(&format!(
+                "- ⚔ {}/{} ↔ {}/{}\n",
+                a.owner, a.goal.id, b.owner, b.goal.id
+            ));
         }
         p.push('\n');
     }
 }
 
 fn render_secrets(p: &mut String, secrets: &[Secret], pov: Option<&str>) {
-    if secrets.is_empty() { return; }
-    let visible: Vec<_> = secrets.iter().filter(|s| {
-        pov.is_none_or(|v| s.known_by.iter().any(|k| k == v))
-    }).collect();
+    if secrets.is_empty() {
+        return;
+    }
+    let visible: Vec<_> = secrets
+        .iter()
+        .filter(|s| pov.is_none_or(|v| s.known_by.iter().any(|k| k == v)))
+        .collect();
     if !visible.is_empty() {
         p.push_str("## POV 已知秘密\n\n");
-        for s in &visible { p.push_str(&format!("- **{}**: {}\n", s.id, s.content)); }
+        for s in &visible {
+            p.push_str(&format!("- **{}**: {}\n", s.id, s.content));
+        }
         p.push('\n');
     }
-    let irony: Vec<_> = secrets.iter().filter(|s| s.revealed_to_reader && !visible.contains(s)).collect();
+    let irony: Vec<_> = secrets
+        .iter()
+        .filter(|s| s.revealed_to_reader && !visible.contains(s))
+        .collect();
     if !irony.is_empty() {
         p.push_str("## 戏剧性反讽 (读者知, POV 不知)\n\n");
-        for s in &irony { p.push_str(&format!("- **{}**: {}\n", s.id, s.content)); }
+        for s in &irony {
+            p.push_str(&format!("- **{}**: {}\n", s.id, s.content));
+        }
         p.push('\n');
     }
 }
@@ -215,33 +277,68 @@ mod tests {
     use ledger::input::entity::Relationship;
 
     fn snap() -> Snapshot {
-        Snapshot::from_parts("ch03", vec![
-            Entity {
-                entity_type: "character".into(), id: "kian".into(), name: Some("基安".into()),
-                traits: vec!["拾荒者".into()], beliefs: vec!["绿洲有水".into()],
-                desires: vec!["找到水源".into()], intentions: vec![], location: Some("oasis_gate".into()),
-                relationships: vec![Relationship { target: "nova".into(), rel: "wary".into() }],
-                inventory: vec!["电磁短刀".into()],
-                alignment: None, rivals: vec![], members: vec![], properties: vec![], connections: vec![], tags: vec![],
-            },
-            Entity {
-                entity_type: "character".into(), id: "nova".into(), name: Some("诺娃".into()),
-                traits: vec!["猎手".into()], beliefs: vec!["入侵者必灭".into()],
-                desires: vec![], intentions: vec![], location: Some("oasis_gate".into()),
-                relationships: vec![], inventory: vec![],
-                alignment: None, rivals: vec![], members: vec![], properties: vec![], connections: vec![], tags: vec![],
-            },
-        ], vec![], vec![])
+        Snapshot::from_parts(
+            "ch03",
+            vec![
+                Entity {
+                    entity_type: "character".into(),
+                    id: "kian".into(),
+                    name: Some("基安".into()),
+                    traits: vec!["拾荒者".into()],
+                    beliefs: vec!["绿洲有水".into()],
+                    desires: vec!["找到水源".into()],
+                    intentions: vec![],
+                    location: Some("oasis_gate".into()),
+                    relationships: vec![Relationship {
+                        target: "nova".into(),
+                        rel: "wary".into(),
+                    }],
+                    inventory: vec!["电磁短刀".into()],
+                    alignment: None,
+                    rivals: vec![],
+                    members: vec![],
+                    properties: vec![],
+                    connections: vec![],
+                    tags: vec![],
+                },
+                Entity {
+                    entity_type: "character".into(),
+                    id: "nova".into(),
+                    name: Some("诺娃".into()),
+                    traits: vec!["猎手".into()],
+                    beliefs: vec!["入侵者必灭".into()],
+                    desires: vec![],
+                    intentions: vec![],
+                    location: Some("oasis_gate".into()),
+                    relationships: vec![],
+                    inventory: vec![],
+                    alignment: None,
+                    rivals: vec![],
+                    members: vec![],
+                    properties: vec![],
+                    connections: vec![],
+                    tags: vec![],
+                },
+            ],
+            vec![],
+            vec![],
+        )
     }
 
     fn drama() -> DramaNode {
         DramaNode {
             chapter: "ch03".into(),
             dramatic_intents: vec![crate::intent::DramaticIntent::Confrontation {
-                between: vec!["kian".into(), "nova".into()], at: "oasis_gate".into(), depends_on: vec![],
+                between: vec!["kian".into(), "nova".into()],
+                at: "oasis_gate".into(),
+                depends_on: vec![],
             }],
             pacing: Pacing::default(),
-            director_notes: DirectorNotes { pov: Some("kian".into()), tone: Some("紧张".into()), ..Default::default() },
+            director_notes: DirectorNotes {
+                pov: Some("kian".into()),
+                tone: Some("紧张".into()),
+                ..Default::default()
+            },
         }
     }
 

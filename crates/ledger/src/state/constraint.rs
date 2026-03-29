@@ -5,18 +5,12 @@ use crate::state::snapshot::Snapshot;
 
 /// Check a list of assertions against a snapshot.
 /// Returns (passed, failed_reasons).
-pub fn check_assertions(
-    snapshot: &Snapshot,
-    assertions: &[StateAssertion],
-) -> (bool, Vec<String>) {
+pub fn check_assertions(snapshot: &Snapshot, assertions: &[StateAssertion]) -> (bool, Vec<String>) {
     let mut failures = Vec::new();
 
     for assertion in assertions {
         if !evaluate_assertion(snapshot, assertion) {
-            failures.push(format!(
-                "{} ≠ {}",
-                assertion.query, assertion.expected
-            ));
+            failures.push(format!("{} ≠ {}", assertion.query, assertion.expected));
         }
     }
 
@@ -34,34 +28,34 @@ fn evaluate_assertion(snapshot: &Snapshot, assertion: &StateAssertion) -> bool {
     let expected = &assertion.expected;
 
     // Pattern: entity_alive(id)
-    if let Some(rest) = query.strip_prefix("entity_alive(") {
-        if let Some(id) = rest.strip_suffix(')') {
-            let exists = snapshot.entities.iter().any(|e| e.id == id);
-            return match expected.as_str() {
-                "true" => exists,
-                "false" => !exists,
-                _ => exists,
-            };
-        }
+    if let Some(rest) = query.strip_prefix("entity_alive(")
+        && let Some(id) = rest.strip_suffix(')')
+    {
+        let exists = snapshot.entities.iter().any(|e| e.id == id);
+        return match expected.as_str() {
+            "true" => exists,
+            "false" => !exists,
+            _ => exists,
+        };
     }
 
     // Pattern: knows(entity, secret)
-    if let Some(rest) = query.strip_prefix("knows(") {
-        if let Some(inner) = rest.strip_suffix(')') {
-            let parts: Vec<&str> = inner.split(',').map(|s| s.trim()).collect();
-            if parts.len() == 2 {
-                let entity_id = parts[0];
-                let secret_id = parts[1];
-                let knows = snapshot
-                    .secrets
-                    .iter()
-                    .any(|s| s.id == secret_id && s.known_by.contains(&entity_id.to_string()));
-                return match expected.as_str() {
-                    "true" => knows,
-                    "false" => !knows,
-                    _ => knows,
-                };
-            }
+    if let Some(rest) = query.strip_prefix("knows(")
+        && let Some(inner) = rest.strip_suffix(')')
+    {
+        let parts: Vec<&str> = inner.split(',').map(|s| s.trim()).collect();
+        if parts.len() == 2 {
+            let entity_id = parts[0];
+            let secret_id = parts[1];
+            let knows = snapshot
+                .secrets
+                .iter()
+                .any(|s| s.id == secret_id && s.known_by.contains(&entity_id.to_string()));
+            return match expected.as_str() {
+                "true" => knows,
+                "false" => !knows,
+                _ => knows,
+            };
         }
     }
 
@@ -80,7 +74,9 @@ fn evaluate_assertion(snapshot: &Snapshot, assertion: &StateAssertion) -> bool {
                 "name" => entity.name.as_deref().is_some_and(|n| n == expected),
                 // Check if entity has a trait
                 f if f.starts_with("has_trait(") => {
-                    if let Some(t) = f.strip_prefix("has_trait(").and_then(|r| r.strip_suffix(')'))
+                    if let Some(t) = f
+                        .strip_prefix("has_trait(")
+                        .and_then(|r| r.strip_suffix(')'))
                     {
                         let has = entity.traits.contains(&t.to_string());
                         match expected.as_str() {
@@ -105,8 +101,9 @@ fn evaluate_assertion(snapshot: &Snapshot, assertion: &StateAssertion) -> bool {
                 }
                 // Check if entity has item
                 f if f.starts_with("has_item(") => {
-                    if let Some(item) =
-                        f.strip_prefix("has_item(").and_then(|r| r.strip_suffix(')'))
+                    if let Some(item) = f
+                        .strip_prefix("has_item(")
+                        .and_then(|r| r.strip_suffix(')'))
                     {
                         let has = entity.inventory.contains(&item.to_string());
                         match expected.as_str() {

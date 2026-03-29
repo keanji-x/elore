@@ -1,10 +1,14 @@
-use std::path::PathBuf;
 use clap::{Parser, Subcommand};
+use std::path::PathBuf;
 
 mod cmd;
 
 #[derive(Parser)]
-#[command(name = "elore", about = "EverLore v3 — Phase-Driven Narrative Compiler", version)]
+#[command(
+    name = "elore",
+    about = "EverLore v3 — Phase-Driven Narrative Compiler",
+    version
+)]
 pub struct Cli {
     /// Project directory (defaults to current directory)
     #[arg(short, long, default_value = ".")]
@@ -117,9 +121,7 @@ pub enum Command {
 
     // ── v3: Phase lifecycle ───────────────────────────────────────
     /// 切换到指定 phase
-    Checkout {
-        phase_id: String,
-    },
+    Checkout { phase_id: String },
 
     /// 提交当前 phase 进入审阅
     Submit,
@@ -128,9 +130,7 @@ pub enum Command {
     Approve,
 
     /// 拒绝当前 phase (退回 active)
-    Reject {
-        reason: String,
-    },
+    Reject { reason: String },
 }
 
 // ── Add subcommands ──────────────────────────────────────────────
@@ -258,4 +258,3 @@ async fn main() {
         std::process::exit(1);
     }
 }
-

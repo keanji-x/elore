@@ -3,8 +3,8 @@
 //! Verifies that the generated text + extracted effects
 //! are consistent with the world snapshot.
 
-use ledger::effect::op::Op;
 use ledger::Snapshot;
+use ledger::effect::op::Op;
 
 /// Result of auditing a chapter's output.
 #[derive(Debug, Clone)]
@@ -34,7 +34,10 @@ impl AuditReport {
     }
 
     pub fn error_count(&self) -> usize {
-        self.issues.iter().filter(|i| i.severity == Severity::Error).count()
+        self.issues
+            .iter()
+            .filter(|i| i.severity == Severity::Error)
+            .count()
     }
 
     pub fn render(&self) -> String {
@@ -77,14 +80,14 @@ pub fn audit_effects(
 
     // Check effects reference valid entities
     for effect in effects {
-        if let Some(eid) = effect.entity_id() {
-            if snapshot.entity(eid).is_none() {
-                issues.push(AuditIssue {
-                    severity: Severity::Error,
-                    category: "invalid_entity".into(),
-                    message: format!("Effect 引用了不存在的实体: {eid}"),
-                });
-            }
+        if let Some(eid) = effect.entity_id()
+            && snapshot.entity(eid).is_none()
+        {
+            issues.push(AuditIssue {
+                severity: Severity::Error,
+                category: "invalid_entity".into(),
+                message: format!("Effect 引用了不存在的实体: {eid}"),
+            });
         }
     }
 
@@ -100,27 +103,47 @@ mod tests {
     use ledger::input::entity::Entity;
 
     fn snap() -> Snapshot {
-        Snapshot::from_parts("ch01", vec![
-            Entity {
-                entity_type: "character".into(), id: "kian".into(), name: None,
-                traits: vec![], beliefs: vec![], desires: vec![], intentions: vec![],
-                location: None, relationships: vec![], inventory: vec!["刀".into()],
-                alignment: None, rivals: vec![], members: vec![], properties: vec![],
-                connections: vec![], tags: vec![],
-            },
-        ], vec![], vec![])
+        Snapshot::from_parts(
+            "ch01",
+            vec![Entity {
+                entity_type: "character".into(),
+                id: "kian".into(),
+                name: None,
+                traits: vec![],
+                beliefs: vec![],
+                desires: vec![],
+                intentions: vec![],
+                location: None,
+                relationships: vec![],
+                inventory: vec!["刀".into()],
+                alignment: None,
+                rivals: vec![],
+                members: vec![],
+                properties: vec![],
+                connections: vec![],
+                tags: vec![],
+            }],
+            vec![],
+            vec![],
+        )
     }
 
     #[test]
     fn audit_passes_with_valid_effects() {
-        let effects = vec![Op::RemoveItem { entity: "kian".into(), item: "刀".into() }];
+        let effects = vec![Op::RemoveItem {
+            entity: "kian".into(),
+            item: "刀".into(),
+        }];
         let report = audit_effects("ch01", &snap(), &effects, &effects);
         assert!(!report.has_errors());
     }
 
     #[test]
     fn audit_catches_missing_required() {
-        let required = vec![Op::RemoveItem { entity: "kian".into(), item: "刀".into() }];
+        let required = vec![Op::RemoveItem {
+            entity: "kian".into(),
+            item: "刀".into(),
+        }];
         let actual = vec![];
         let report = audit_effects("ch01", &snap(), &actual, &required);
         assert!(report.has_errors());
@@ -129,7 +152,10 @@ mod tests {
 
     #[test]
     fn audit_catches_invalid_entity() {
-        let effects = vec![Op::AddTrait { entity: "ghost".into(), value: "test".into() }];
+        let effects = vec![Op::AddTrait {
+            entity: "ghost".into(),
+            value: "test".into(),
+        }];
         let report = audit_effects("ch01", &snap(), &effects, &[]);
         assert!(report.has_errors());
         assert!(report.render().contains("ghost"));

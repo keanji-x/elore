@@ -191,10 +191,22 @@ fn diff_entity(old: &Entity, new: &Entity) -> EntityDiff {
         id: old.id.clone(),
         entity_type: old.entity_type.clone(),
         location_change,
-        added_traits: new_traits.difference(&old_traits).map(|s| (*s).clone()).collect(),
-        removed_traits: old_traits.difference(&new_traits).map(|s| (*s).clone()).collect(),
-        added_beliefs: new_beliefs.difference(&old_beliefs).map(|s| (*s).clone()).collect(),
-        removed_beliefs: old_beliefs.difference(&new_beliefs).map(|s| (*s).clone()).collect(),
+        added_traits: new_traits
+            .difference(&old_traits)
+            .map(|s| (*s).clone())
+            .collect(),
+        removed_traits: old_traits
+            .difference(&new_traits)
+            .map(|s| (*s).clone())
+            .collect(),
+        added_beliefs: new_beliefs
+            .difference(&old_beliefs)
+            .map(|s| (*s).clone())
+            .collect(),
+        removed_beliefs: old_beliefs
+            .difference(&new_beliefs)
+            .map(|s| (*s).clone())
+            .collect(),
         added_relationships: new_rels.difference(&old_rels).cloned().collect(),
         removed_relationships: old_rels.difference(&new_rels).cloned().collect(),
         added_inventory: new_inv.difference(&old_inv).map(|s| (*s).clone()).collect(),

@@ -194,7 +194,10 @@ pub fn filter_by_tags(entities: Vec<Entity>, active_tags: &BTreeSet<String>) -> 
 pub fn translate_to_datalog(entities: &[Entity]) -> String {
     let mut output = String::from("% Auto-generated entity facts\n\n");
     for entity in entities {
-        output.push_str(&format!("% --- {} ({}) ---\n", entity.id, entity.entity_type));
+        output.push_str(&format!(
+            "% --- {} ({}) ---\n",
+            entity.id, entity.entity_type
+        ));
         for fact in entity.to_datalog() {
             output.push_str(&fact);
             output.push('\n');
@@ -232,9 +235,7 @@ heard_of(?A, ?C) :- rel(?A, ?B, knows), rel(?B, ?C, knows), ?A != ?C.
 
 /// Quote a string value for Datalog. If it's a simple identifier, leave it bare.
 fn quote(s: &str) -> String {
-    if s.chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '_')
-    {
+    if s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
         s.to_string()
     } else {
         format!("\"{}\"", s.replace('"', "\\\""))

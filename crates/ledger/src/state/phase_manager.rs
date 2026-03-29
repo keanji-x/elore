@@ -7,13 +7,13 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use crate::state::phase::{Phase, PhaseStatus};
 use crate::LedgerError;
+use crate::state::phase::{Phase, PhaseStatus};
 
 const STATE_FILE: &str = "state.json";
 
 /// Persisted global state: which phase is active, all phases' status.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ProjectState {
     /// Currently checked-out phase (None if nothing active)
     #[serde(default)]
@@ -52,16 +52,6 @@ pub struct PhaseEntry {
     pub rejected_reason: Option<String>,
 }
 
-impl Default for ProjectState {
-    fn default() -> Self {
-        Self {
-            current_phase: None,
-            plan: Vec::new(),
-            phases: BTreeMap::new(),
-        }
-    }
-}
-
 impl ProjectState {
     /// Load from `.everlore/state.json`, or return default if not exists.
     pub fn load(everlore_dir: &Path) -> Self {
@@ -91,7 +81,9 @@ impl ProjectState {
             PhaseStatus::Ready
         } else {
             let all_deps_approved = phase.depends_on.iter().all(|dep| {
-                self.phases.get(dep).is_some_and(|e| e.status == PhaseStatus::Approved)
+                self.phases
+                    .get(dep)
+                    .is_some_and(|e| e.status == PhaseStatus::Approved)
             });
             if all_deps_approved {
                 PhaseStatus::Ready
@@ -100,15 +92,18 @@ impl ProjectState {
             }
         };
 
-        self.phases.insert(phase.id.clone(), PhaseEntry {
-            status,
-            beats: 0,
-            words: 0,
-            effects: 0,
-            checked_out_at: None,
-            approved_at: None,
-            rejected_reason: None,
-        });
+        self.phases.insert(
+            phase.id.clone(),
+            PhaseEntry {
+                status,
+                beats: 0,
+                words: 0,
+                effects: 0,
+                checked_out_at: None,
+                approved_at: None,
+                rejected_reason: None,
+            },
+        );
 
         // Add to plan if not already present
         if !self.plan.contains(&phase.id) {
@@ -121,17 +116,18 @@ impl ProjectState {
     /// Checkout a phase. Transitions ready → active.
     pub fn checkout(&mut self, phase_id: &str) -> Result<(), LedgerError> {
         // Can't checkout if another phase is active
-        if let Some(ref current) = self.current_phase {
-            if current != phase_id {
-                return Err(LedgerError::Other(format!(
-                    "Phase '{current}' 正在进行中，请先 submit 或切换"
-                )));
-            }
+        if let Some(ref current) = self.current_phase
+            && current != phase_id
+        {
+            return Err(LedgerError::Other(format!(
+                "Phase '{current}' 正在进行中，请先 submit 或切换"
+            )));
         }
 
-        let entry = self.phases.get_mut(phase_id).ok_or_else(|| {
-            LedgerError::NotFound(format!("Phase '{phase_id}' 未注册"))
-        })?;
+        let entry = self
+            .phases
+            .get_mut(phase_id)
+            .ok_or_else(|| LedgerError::NotFound(format!("Phase '{phase_id}' 未注册")))?;
 
         match entry.status {
             PhaseStatus::Ready => {
@@ -148,9 +144,9 @@ impl ProjectState {
             PhaseStatus::Locked => Err(LedgerError::Other(format!(
                 "Phase '{phase_id}' 仍然 locked — 前置 phase 未完成"
             ))),
-            PhaseStatus::Reviewing => Err(LedgerError::Other(format!(
-                "Phase '{phase_id}' 正在审阅中"
-            ))),
+            PhaseStatus::Reviewing => {
+                Err(LedgerError::Other(format!("Phase '{phase_id}' 正在审阅中")))
+            }
             PhaseStatus::Approved => Err(LedgerError::Other(format!(
                 "Phase '{phase_id}' 已经 approved，不能重新 checkout"
             ))),
@@ -159,13 +155,16 @@ impl ProjectState {
 
     /// Submit current phase for review. Transitions active → reviewing.
     pub fn submit(&mut self) -> Result<String, LedgerError> {
-        let phase_id = self.current_phase.as_ref().ok_or_else(|| {
-            LedgerError::Other("没有活跃的 phase".into())
-        })?.clone();
+        let phase_id = self
+            .current_phase
+            .as_ref()
+            .ok_or_else(|| LedgerError::Other("没有活跃的 phase".into()))?
+            .clone();
 
-        let entry = self.phases.get_mut(&phase_id).ok_or_else(|| {
-            LedgerError::NotFound(format!("Phase '{phase_id}' 未注册"))
-        })?;
+        let entry = self
+            .phases
+            .get_mut(&phase_id)
+            .ok_or_else(|| LedgerError::NotFound(format!("Phase '{phase_id}' 未注册")))?;
 
         if entry.status != PhaseStatus::Active {
             return Err(LedgerError::Other(format!(
@@ -180,13 +179,16 @@ impl ProjectState {
     /// Approve current phase. Transitions reviewing → approved.
     /// Automatically unlocks dependent phases.
     pub fn approve(&mut self) -> Result<String, LedgerError> {
-        let phase_id = self.current_phase.as_ref().ok_or_else(|| {
-            LedgerError::Other("没有活跃的 phase".into())
-        })?.clone();
+        let phase_id = self
+            .current_phase
+            .as_ref()
+            .ok_or_else(|| LedgerError::Other("没有活跃的 phase".into()))?
+            .clone();
 
-        let entry = self.phases.get_mut(&phase_id).ok_or_else(|| {
-            LedgerError::NotFound(format!("Phase '{phase_id}' 未注册"))
-        })?;
+        let entry = self
+            .phases
+            .get_mut(&phase_id)
+            .ok_or_else(|| LedgerError::NotFound(format!("Phase '{phase_id}' 未注册")))?;
 
         if entry.status != PhaseStatus::Reviewing {
             return Err(LedgerError::Other(format!(
@@ -206,13 +208,16 @@ impl ProjectState {
 
     /// Reject current phase. Transitions reviewing → active.
     pub fn reject(&mut self, reason: &str) -> Result<String, LedgerError> {
-        let phase_id = self.current_phase.as_ref().ok_or_else(|| {
-            LedgerError::Other("没有活跃的 phase".into())
-        })?.clone();
+        let phase_id = self
+            .current_phase
+            .as_ref()
+            .ok_or_else(|| LedgerError::Other("没有活跃的 phase".into()))?
+            .clone();
 
-        let entry = self.phases.get_mut(&phase_id).ok_or_else(|| {
-            LedgerError::NotFound(format!("Phase '{phase_id}' 未注册"))
-        })?;
+        let entry = self
+            .phases
+            .get_mut(&phase_id)
+            .ok_or_else(|| LedgerError::NotFound(format!("Phase '{phase_id}' 未注册")))?;
 
         if entry.status != PhaseStatus::Reviewing {
             return Err(LedgerError::Other(format!(
@@ -227,12 +232,12 @@ impl ProjectState {
 
     /// Update beat/word/effect counts for the active phase.
     pub fn update_progress(&mut self, beats: u32, words: u32, effects: u32) {
-        if let Some(ref id) = self.current_phase {
-            if let Some(entry) = self.phases.get_mut(id) {
-                entry.beats = beats;
-                entry.words = words;
-                entry.effects = effects;
-            }
+        if let Some(ref id) = self.current_phase
+            && let Some(entry) = self.phases.get_mut(id)
+        {
+            entry.beats = beats;
+            entry.words = words;
+            entry.effects = effects;
         }
     }
 
@@ -253,12 +258,12 @@ impl ProjectState {
             .collect();
 
         for phase in phases {
-            if let Some(entry) = self.phases.get_mut(&phase.id) {
-                if entry.status == PhaseStatus::Locked {
-                    let all_deps_met = phase.depends_on.iter().all(|dep| approved.contains(dep));
-                    if all_deps_met {
-                        entry.status = PhaseStatus::Ready;
-                    }
+            if let Some(entry) = self.phases.get_mut(&phase.id)
+                && entry.status == PhaseStatus::Locked
+            {
+                let all_deps_met = phase.depends_on.iter().all(|dep| approved.contains(dep));
+                if all_deps_met {
+                    entry.status = PhaseStatus::Ready;
                 }
             }
         }

@@ -1,5 +1,5 @@
-use std::path::Path;
 use colored::Colorize;
+use std::path::Path;
 
 /// Initialize a new EverLore project.
 pub fn run(project: &Path) -> Result<(), Box<dyn std::error::Error>> {
@@ -81,13 +81,22 @@ pub fn new_entity(
             "rivals": [],
             "tags": ["active"]
         }),
-        _ => return Err(format!("未知类型: {entity_type} (可选: character, location, faction)").into()),
+        _ => {
+            return Err(
+                format!("未知类型: {entity_type} (可选: character, location, faction)").into(),
+            );
+        }
     };
 
     let content = serde_json::to_string_pretty(&json)?;
     std::fs::write(&path, content)?;
 
-    println!("{} {} {}", "✓".green().bold(), entity_type.cyan(), id.bold());
+    println!(
+        "{} {} {}",
+        "✓".green().bold(),
+        entity_type.cyan(),
+        id.bold()
+    );
     println!("  → {}", path.display());
     Ok(())
 }

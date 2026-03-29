@@ -15,11 +15,11 @@ use crate::input::entity::Entity;
 /// Type of edge in the world graph.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum EdgeKind {
-    At,           // character → location
-    Rel(String),  // character → character (relationship label)
-    Connected,    // location ↔ location
-    Member,       // character → faction
-    Rival,        // faction ↔ faction
+    At,          // character → location
+    Rel(String), // character → character (relationship label)
+    Connected,   // location ↔ location
+    Member,      // character → faction
+    Rival,       // faction ↔ faction
 }
 
 /// A node in the world graph.
@@ -225,7 +225,9 @@ impl WorldGraph {
         let edges: Vec<GraphEdge> = self
             .edges
             .iter()
-            .filter(|e| included_set.contains(e.from.as_str()) && included_set.contains(e.to.as_str()))
+            .filter(|e| {
+                included_set.contains(e.from.as_str()) && included_set.contains(e.to.as_str())
+            })
             .cloned()
             .collect();
 

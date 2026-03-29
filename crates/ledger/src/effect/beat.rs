@@ -7,8 +7,8 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use crate::effect::op::Op;
 use crate::LedgerError;
+use crate::effect::op::Op;
 
 /// A single beat: one writing iteration's output.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -97,16 +97,13 @@ impl Beat {
         if let Ok(entries) = std::fs::read_dir(beats_dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                if path.extension().is_some_and(|e| e == "json") {
-                    if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
-                        if stem.starts_with(&format!("{phase_id}_")) {
-                            if let Ok(content) = std::fs::read_to_string(&path) {
-                                if let Ok(beat) = serde_json::from_str::<Beat>(&content) {
-                                    all.push(beat);
-                                }
-                            }
-                        }
-                    }
+                if path.extension().is_some_and(|e| e == "json")
+                    && let Some(stem) = path.file_stem().and_then(|s| s.to_str())
+                    && stem.starts_with(&format!("{phase_id}_"))
+                    && let Ok(content) = std::fs::read_to_string(&path)
+                    && let Ok(beat) = serde_json::from_str::<Beat>(&content)
+                {
+                    all.push(beat);
                 }
             }
         }
@@ -231,17 +228,30 @@ mod tests {
 
         // Original beat
         let b1 = Beat {
-            phase: "test".into(), seq: 1, revises: None, revision: 0,
-            text: "原始".into(), effects: vec![], word_count: 2,
-            created_by: "ai".into(), created_at: String::new(), revision_reason: None,
+            phase: "test".into(),
+            seq: 1,
+            revises: None,
+            revision: 0,
+            text: "原始".into(),
+            effects: vec![],
+            word_count: 2,
+            created_by: "ai".into(),
+            created_at: String::new(),
+            revision_reason: None,
         };
         b1.save(dir.path()).unwrap();
 
         // Revision of beat 1
         let b1r = Beat {
-            phase: "test".into(), seq: 1, revises: Some(1), revision: 1,
-            text: "修订版".into(), effects: vec![], word_count: 3,
-            created_by: "ai".into(), created_at: String::new(),
+            phase: "test".into(),
+            seq: 1,
+            revises: Some(1),
+            revision: 1,
+            text: "修订版".into(),
+            effects: vec![],
+            word_count: 3,
+            created_by: "ai".into(),
+            created_at: String::new(),
             revision_reason: Some("改进".into()),
         };
         b1r.save(dir.path()).unwrap();
@@ -255,16 +265,30 @@ mod tests {
     #[test]
     fn beat_filename() {
         let b = Beat {
-            phase: "setup".into(), seq: 3, revises: None, revision: 0,
-            text: String::new(), effects: vec![], word_count: 0,
-            created_by: "ai".into(), created_at: String::new(), revision_reason: None,
+            phase: "setup".into(),
+            seq: 3,
+            revises: None,
+            revision: 0,
+            text: String::new(),
+            effects: vec![],
+            word_count: 0,
+            created_by: "ai".into(),
+            created_at: String::new(),
+            revision_reason: None,
         };
         assert_eq!(b.filename(), "setup_003.json");
 
         let br = Beat {
-            phase: "setup".into(), seq: 3, revises: Some(3), revision: 2,
-            text: String::new(), effects: vec![], word_count: 0,
-            created_by: "ai".into(), created_at: String::new(), revision_reason: None,
+            phase: "setup".into(),
+            seq: 3,
+            revises: Some(3),
+            revision: 2,
+            text: String::new(),
+            effects: vec![],
+            word_count: 0,
+            created_by: "ai".into(),
+            created_at: String::new(),
+            revision_reason: None,
         };
         assert_eq!(br.filename(), "setup_003_r2.json");
     }

@@ -154,7 +154,7 @@ fn strip_iri_brackets(s: &str) -> String {
 // Program assembly
 // ══════════════════════════════════════════════════════════════════
 
-/// Assemble a complete reasoning program from parts.
+#[allow(clippy::too_many_arguments)]
 pub fn assemble_program(
     entity_facts: &str,
     graph_facts: &str,

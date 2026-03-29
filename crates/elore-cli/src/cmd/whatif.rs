@@ -1,12 +1,15 @@
-use std::path::Path;
 use colored::Colorize;
+use std::path::Path;
 
+use ledger::effect::diff::SnapshotDiff;
 use ledger::effect::op::Op;
 use ledger::state::snapshot::Snapshot;
-use ledger::effect::diff::SnapshotDiff;
 
-
-pub async fn run(project: &Path, chapter: &str, effect_dsl: &str) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn run(
+    project: &Path,
+    chapter: &str,
+    effect_dsl: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
     let entities_dir = project.join(".everlore/entities");
     let everlore_dir = project.join(".everlore");
 
@@ -36,7 +39,10 @@ pub async fn run(project: &Path, chapter: &str, effect_dsl: &str) -> Result<(), 
     } else {
         println!("{}", diff.render());
         let changed = diff.changed_entity_ids();
-        println!("受影响实体: {}", changed.into_iter().collect::<Vec<_>>().join(", "));
+        println!(
+            "受影响实体: {}",
+            changed.into_iter().collect::<Vec<_>>().join(", ")
+        );
     }
 
     Ok(())

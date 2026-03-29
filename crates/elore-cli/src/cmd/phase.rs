@@ -6,10 +6,10 @@ use std::path::Path;
 use colored::Colorize;
 use serde_json::json;
 
-use ledger::state::phase::Phase;
-use ledger::state::phase_manager::ProjectState;
 use ledger::effect::beat::Beat;
 use ledger::state::constraint::check_assertions;
+use ledger::state::phase::Phase;
+use ledger::state::phase_manager::ProjectState;
 use ledger::state::snapshot::Snapshot;
 
 use evaluator::annotation;
@@ -31,7 +31,11 @@ pub fn checkout(project: &Path, phase_id: &str) -> Result<(), Box<dyn std::error
     state.checkout(phase_id)?;
     state.save(&everlore)?;
 
-    println!("{} checkout → {}", "✓".green().bold(), phase_id.cyan().bold());
+    println!(
+        "{} checkout → {}",
+        "✓".green().bold(),
+        phase_id.cyan().bold()
+    );
     println!("  使用 {} 查看当前约束进度", "elore status".bold());
     Ok(())
 }
@@ -65,10 +69,8 @@ pub fn status(project: &Path, format: Format) -> Result<(), Box<dyn std::error::
     let snap = Snapshot::build(&phase_id, &entities_dir, &everlore)?;
 
     // ── L1: Ledger ──
-    let (inv_ok, inv_failures) =
-        check_assertions(&snap, &phase.constraints.ledger.invariants);
-    let (exit_ok, exit_failures) =
-        check_assertions(&snap, &phase.constraints.ledger.exit_state);
+    let (inv_ok, inv_failures) = check_assertions(&snap, &phase.constraints.ledger.invariants);
+    let (exit_ok, exit_failures) = check_assertions(&snap, &phase.constraints.ledger.exit_state);
 
     // ── L2: Resolver ──
     let total_effects: u32 = beats.iter().map(|b| b.effects.len() as u32).sum();
@@ -86,7 +88,11 @@ pub fn status(project: &Path, format: Format) -> Result<(), Box<dyn std::error::
     let avg = annotation::avg_score(&anns);
     let min_avg = phase.constraints.evaluator.min_avg_score.unwrap_or(0.0);
     let low = annotation::low_beats(&anns, 2);
-    let max_boring = phase.constraints.evaluator.max_boring_beats.unwrap_or(u32::MAX);
+    let max_boring = phase
+        .constraints
+        .evaluator
+        .max_boring_beats
+        .unwrap_or(u32::MAX);
     let eval_ok = (anns.is_empty() || avg >= min_avg) && (low.len() as u32) <= max_boring;
 
     let all_ok = inv_ok && exit_ok && effects_met && words_met && eval_ok;
@@ -123,13 +129,29 @@ pub fn status(project: &Path, format: Format) -> Result<(), Box<dyn std::error::
             println!("{}", serde_json::to_string_pretty(&j)?);
         }
         Format::Human => {
-            let icon = if all_ok { "✓".green() } else { "◎".yellow() };
-            println!("{} Phase: {} ({})", icon, phase_id.cyan().bold(),
-                     if all_ok { "ALL ✓".green().to_string() } else { "进行中".yellow().to_string() });
+            let icon = if all_ok {
+                "✓".green()
+            } else {
+                "◎".yellow()
+            };
+            println!(
+                "{} Phase: {} ({})",
+                icon,
+                phase_id.cyan().bold(),
+                if all_ok {
+                    "ALL ✓".green().to_string()
+                } else {
+                    "进行中".yellow().to_string()
+                }
+            );
             println!();
 
             // L1
-            let l1 = if inv_ok && exit_ok { "✓".green() } else { "✗".red() };
+            let l1 = if inv_ok && exit_ok {
+                "✓".green()
+            } else {
+                "✗".red()
+            };
             println!("  {} L1·State", l1);
             if !inv_ok {
                 for f in &inv_failures {
@@ -143,19 +165,49 @@ pub fn status(project: &Path, format: Format) -> Result<(), Box<dyn std::error::
             }
 
             // L2
-            let l2 = if effects_met { "✓".green() } else { "◎".yellow() };
-            println!("  {} L2·Drama  effects: {}/{}", l2, total_effects, min_effects);
+            let l2 = if effects_met {
+                "✓".green()
+            } else {
+                "◎".yellow()
+            };
+            println!(
+                "  {} L2·Drama  effects: {}/{}",
+                l2, total_effects, min_effects
+            );
 
             // L3
-            let l3 = if words_met { "✓".green() } else { "◎".yellow() };
-            println!("  {} L3·Writing words: {}/{}-{}, beats: {}/{}",
-                     l3, total_words, word_min, word_max, beat_count,
-                     if plan_count > 0 { plan_count.to_string() } else { "∞".into() });
+            let l3 = if words_met {
+                "✓".green()
+            } else {
+                "◎".yellow()
+            };
+            println!(
+                "  {} L3·Writing words: {}/{}-{}, beats: {}/{}",
+                l3,
+                total_words,
+                word_min,
+                word_max,
+                beat_count,
+                if plan_count > 0 {
+                    plan_count.to_string()
+                } else {
+                    "∞".into()
+                }
+            );
 
             // L4
-            let l4 = if eval_ok { "✓".green() } else { "◎".yellow() };
+            let l4 = if eval_ok {
+                "✓".green()
+            } else {
+                "◎".yellow()
+            };
             if !anns.is_empty() {
-                println!("  {} L4·Reader  avg: {:.1}, low_beats: {}", l4, avg, low.len());
+                println!(
+                    "  {} L4·Reader  avg: {:.1}, low_beats: {}",
+                    l4,
+                    avg,
+                    low.len()
+                );
             } else {
                 println!("  {} L4·Reader  (尚未标注)", l4);
             }
@@ -165,7 +217,11 @@ pub fn status(project: &Path, format: Format) -> Result<(), Box<dyn std::error::
     Ok(())
 }
 
-fn show_plan_overview(_project: &Path, state: &ProjectState, format: Format) -> Result<(), Box<dyn std::error::Error>> {
+fn show_plan_overview(
+    _project: &Path,
+    state: &ProjectState,
+    format: Format,
+) -> Result<(), Box<dyn std::error::Error>> {
     match format {
         Format::Json => {
             let j = json!({
@@ -177,7 +233,10 @@ fn show_plan_overview(_project: &Path, state: &ProjectState, format: Format) -> 
         }
         Format::Human => {
             if state.plan.is_empty() {
-                println!("{}", "(尚无 phase 计划，请先 `elore add phase '{...}'`)".dimmed());
+                println!(
+                    "{}",
+                    "(尚无 phase 计划，请先 `elore add phase '{...}'`)".dimmed()
+                );
                 return Ok(());
             }
             println!("{}", "═══ Phase Plan ═══".cyan().bold());
@@ -190,8 +249,14 @@ fn show_plan_overview(_project: &Path, state: &ProjectState, format: Format) -> 
                         ledger::PhaseStatus::Reviewing => "🟡",
                         ledger::PhaseStatus::Approved => "✅",
                     };
-                    println!("  {} {} ({:?}) — {} words, {} beats",
-                             icon, id.bold(), entry.status, entry.words, entry.beats);
+                    println!(
+                        "  {} {} ({:?}) — {} words, {} beats",
+                        icon,
+                        id.bold(),
+                        entry.status,
+                        entry.words,
+                        entry.beats
+                    );
                 }
             }
         }
@@ -208,8 +273,16 @@ pub fn submit(project: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let mut state = ProjectState::load(&everlore);
     let phase_id = state.submit()?;
     state.save(&everlore)?;
-    println!("{} {} → reviewing", "✓".green().bold(), phase_id.cyan().bold());
-    println!("  使用 {} 或 {} 来审阅", "elore approve".bold(), "elore reject \"原因\"".bold());
+    println!(
+        "{} {} → reviewing",
+        "✓".green().bold(),
+        phase_id.cyan().bold()
+    );
+    println!(
+        "  使用 {} 或 {} 来审阅",
+        "elore approve".bold(),
+        "elore reject \"原因\"".bold()
+    );
     Ok(())
 }
 
@@ -227,7 +300,11 @@ pub fn approve(project: &Path) -> Result<(), Box<dyn std::error::Error>> {
     state.resolve_dependencies_with_phases(&all_phases);
 
     state.save(&everlore)?;
-    println!("{} {} → approved ✅", "✓".green().bold(), phase_id.cyan().bold());
+    println!(
+        "{} {} → approved ✅",
+        "✓".green().bold(),
+        phase_id.cyan().bold()
+    );
 
     // Check if any phase was unlocked
     for (id, entry) in &state.phases {
@@ -243,7 +320,11 @@ pub fn reject(project: &Path, reason: &str) -> Result<(), Box<dyn std::error::Er
     let mut state = ProjectState::load(&everlore);
     let phase_id = state.reject(reason)?;
     state.save(&everlore)?;
-    println!("{} {} → active (rejected)", "↩".yellow().bold(), phase_id.cyan().bold());
+    println!(
+        "{} {} → active (rejected)",
+        "↩".yellow().bold(),
+        phase_id.cyan().bold()
+    );
     println!("  原因: {}", reason);
     Ok(())
 }

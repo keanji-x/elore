@@ -1,5 +1,6 @@
-use std::path::Path;
+#![allow(dead_code)]
 use colored::Colorize;
+use std::path::Path;
 
 use ledger::effect::history::History;
 use ledger::input::{entity, goal, secret};
@@ -17,10 +18,24 @@ pub fn run(project: &Path) -> Result<(), Box<dyn std::error::Error>> {
 
     // Entities
     let entities = entity::load_entities(&entities_dir).unwrap_or_default();
-    let chars: Vec<_> = entities.iter().filter(|e| e.entity_type == "character").collect();
-    let locs: Vec<_> = entities.iter().filter(|e| e.entity_type == "location").collect();
-    let facs: Vec<_> = entities.iter().filter(|e| e.entity_type == "faction").collect();
-    println!("\n实体: {} 角色, {} 地点, {} 势力", chars.len(), locs.len(), facs.len());
+    let chars: Vec<_> = entities
+        .iter()
+        .filter(|e| e.entity_type == "character")
+        .collect();
+    let locs: Vec<_> = entities
+        .iter()
+        .filter(|e| e.entity_type == "location")
+        .collect();
+    let facs: Vec<_> = entities
+        .iter()
+        .filter(|e| e.entity_type == "faction")
+        .collect();
+    println!(
+        "\n实体: {} 角色, {} 地点, {} 势力",
+        chars.len(),
+        locs.len(),
+        facs.len()
+    );
 
     // Secrets
     let secrets = secret::load_secrets(&entities_dir).unwrap_or_default();

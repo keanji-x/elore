@@ -1,5 +1,5 @@
-use std::path::Path;
 use colored::Colorize;
+use std::path::Path;
 
 use ledger::effect::history::History;
 use ledger::effect::op::Op;
@@ -16,7 +16,11 @@ pub fn run(project: &Path, action: crate::HistoryAction) -> Result<(), Box<dyn s
             }
 
             let entries: Vec<_> = if let Some(ch) = &chapter {
-                history.entries.iter().filter(|e| &e.chapter == ch).collect()
+                history
+                    .entries
+                    .iter()
+                    .filter(|e| &e.chapter == ch)
+                    .collect()
             } else {
                 history.entries.iter().collect()
             };
@@ -34,9 +38,7 @@ pub fn run(project: &Path, action: crate::HistoryAction) -> Result<(), Box<dyn s
             Ok(())
         }
 
-        crate::HistoryAction::Add { chapter, effect } => {
-            commit_effect(project, &chapter, &effect)
-        }
+        crate::HistoryAction::Add { chapter, effect } => commit_effect(project, &chapter, &effect),
 
         crate::HistoryAction::Rollback { chapter } => {
             let everlore = project.join(".everlore");
@@ -44,7 +46,12 @@ pub fn run(project: &Path, action: crate::HistoryAction) -> Result<(), Box<dyn s
             if removed == 0 {
                 println!("{}", format!("章节 {chapter} 无事件可回滚").dimmed());
             } else {
-                println!("{} 回滚了 {} 的 {} 条事件", "✓".green().bold(), chapter.cyan(), removed);
+                println!(
+                    "{} 回滚了 {} 的 {} 条事件",
+                    "✓".green().bold(),
+                    chapter.cyan(),
+                    removed
+                );
             }
             Ok(())
         }
@@ -67,6 +74,12 @@ pub fn commit_effect(
         effect: op.clone(),
     };
     History::append(&everlore, &[entry])?;
-    println!("{} [{}/{}] {}", "✓".green().bold(), chapter.cyan(), seq, op.describe());
+    println!(
+        "{} [{}/{}] {}",
+        "✓".green().bold(),
+        chapter.cyan(),
+        seq,
+        op.describe()
+    );
     Ok(())
 }

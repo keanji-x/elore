@@ -1,16 +1,16 @@
-mod init;
-mod snapshot;
-mod validate;
-mod history;
-mod drama;
-mod status;
-mod plan;
-mod diff;
-mod whatif;
 mod add;
-mod read_query;
-mod phase;
+mod diff;
+mod drama;
 mod generate;
+mod history;
+mod init;
+mod phase;
+mod plan;
+mod read_query;
+mod snapshot;
+mod status;
+mod validate;
+mod whatif;
 
 use crate::Cli;
 use read_query::Format;
@@ -21,9 +21,11 @@ pub async fn dispatch(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     match cli.command {
         // Project setup
         crate::Command::Init => init::run(&project),
-        crate::Command::New { entity_type, id, name } => {
-            init::new_entity(&project, &entity_type, &id, name.as_deref())
-        }
+        crate::Command::New {
+            entity_type,
+            id,
+            name,
+        } => init::new_entity(&project, &entity_type, &id, name.as_deref()),
 
         // AI write API
         crate::Command::Add { action } => match action {
@@ -66,16 +68,19 @@ pub async fn dispatch(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         // Human pipeline
         crate::Command::Snapshot { chapter } => snapshot::run(&project, &chapter).await,
         crate::Command::Validate { chapter } => validate::run(&project, &chapter).await,
-        crate::Command::Write { chapter, pov, outline } => {
-            snapshot::write_prompt(&project, &chapter, pov.as_deref(), outline.as_deref()).await
-        }
+        crate::Command::Write {
+            chapter,
+            pov,
+            outline,
+        } => snapshot::write_prompt(&project, &chapter, pov.as_deref(), outline.as_deref()).await,
         crate::Command::Run { chapter, pov } => {
             snapshot::run_pipeline(&project, &chapter, pov.as_deref()).await
         }
         crate::Command::Plan { chapter } => plan::run(&project, chapter.as_deref()).await,
-        crate::Command::Diff { from_chapter, to_chapter } => {
-            diff::run(&project, &from_chapter, &to_chapter).await
-        }
+        crate::Command::Diff {
+            from_chapter,
+            to_chapter,
+        } => diff::run(&project, &from_chapter, &to_chapter).await,
         crate::Command::Whatif { chapter, effect } => {
             whatif::run(&project, &chapter, &effect).await
         }
@@ -87,9 +92,7 @@ pub async fn dispatch(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         }
 
         // v3: phase lifecycle
-        crate::Command::Status { format } => {
-            phase::status(&project, Format::from_str(&format))
-        }
+        crate::Command::Status { format } => phase::status(&project, Format::from_str(&format)),
         crate::Command::Checkout { phase_id } => phase::checkout(&project, &phase_id),
         crate::Command::Submit => phase::submit(&project),
         crate::Command::Approve => phase::approve(&project),
