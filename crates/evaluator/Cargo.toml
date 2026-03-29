@@ -1,0 +1,19 @@
+[package]
+name = "evaluator"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+ledger = { workspace = true }
+resolver = { workspace = true }
+executor = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+log = { workspace = true }
+thiserror = { workspace = true }
+async-trait = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"

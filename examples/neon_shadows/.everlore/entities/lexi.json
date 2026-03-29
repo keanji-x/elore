@@ -1,0 +1,18 @@
+{
+  "beliefs": [],
+  "desires": [],
+  "id": "lexi",
+  "intentions": [],
+  "inventory": [],
+  "location": "the_spire",
+  "name": "莱克西",
+  "relationships": [],
+  "tags": [
+    "active"
+  ],
+  "traits": [
+    "全息偶像",
+    "觉醒AI"
+  ],
+  "type": "character"
+}

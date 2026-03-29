@@ -1,0 +1,18 @@
+{
+  "beliefs": [],
+  "desires": [],
+  "id": "ryker",
+  "intentions": [],
+  "inventory": [],
+  "location": "sector_4",
+  "name": "莱克",
+  "relationships": [],
+  "tags": [
+    "active"
+  ],
+  "traits": [
+    "义体衰退",
+    "前警探"
+  ],
+  "type": "character"
+}

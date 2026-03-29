@@ -1,0 +1,20 @@
+{
+  "beliefs": [],
+  "connections": [],
+  "desires": [],
+  "id": "sector_4",
+  "intentions": [],
+  "inventory": [],
+  "name": "第四区",
+  "properties": [
+    "霓虹闪烁",
+    "酸雨",
+    "法外之地"
+  ],
+  "relationships": [],
+  "tags": [
+    "active"
+  ],
+  "traits": [],
+  "type": "location"
+}

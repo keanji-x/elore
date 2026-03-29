@@ -1,0 +1,29 @@
+id: ch1_rainy_night
+order: 0
+depends_on: []
+synopsis: 莱克在第四区收到神秘委托，发现线索指向高塔，并最终决定前往。
+constraints:
+  ledger:
+    invariants:
+    - query: entity_alive(ryker)
+      expected: 'true'
+    exit_state:
+    - query: ryker.location
+      expected: the_spire
+  resolver:
+    intents: []
+    min_effects: 2
+    min_relationship_changes: null
+  executor:
+    words:
+    - 150
+    - 2000
+    per_beat: null
+    pov: null
+    tone: null
+    tone_arc: null
+    writing_plan: []
+  evaluator:
+    min_avg_score: null
+    max_boring_beats: null
+    required_tags: []

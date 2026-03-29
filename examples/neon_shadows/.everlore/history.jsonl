@@ -1,0 +1,2 @@
+{"chapter":"ch1_rainy_night","seq":100,"op":"add_trait","entity":"ryker","value":"on_the_trail"}
+{"chapter":"ch1_rainy_night","seq":200,"op":"move","entity":"ryker","location":"the_spire"}

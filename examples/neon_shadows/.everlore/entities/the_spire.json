@@ -1,0 +1,20 @@
+{
+  "beliefs": [],
+  "connections": [],
+  "desires": [],
+  "id": "the_spire",
+  "intentions": [],
+  "inventory": [],
+  "name": "高塔",
+  "properties": [
+    "企业控制",
+    "全息广告",
+    "森严界碑"
+  ],
+  "relationships": [],
+  "tags": [
+    "active"
+  ],
+  "traits": [],
+  "type": "location"
+}

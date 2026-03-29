@@ -1,0 +1,16 @@
+{
+  "phase": "ch1_rainy_night",
+  "seq": 2,
+  "revision": 0,
+  "text": "磁悬浮列车冲破第四区的结界，霓虹灯的色彩逐渐从杂乱变为冰冷的纯白与蔚蓝。高塔的轮廓在雨幕上浮现，巨大的莱克西全息影像正在夜空中无声地歌唱。莱克走出车站，冷银色的光打在他满是划痕的皮夹克上。他看着那巨大的幻影，意识到这不再是普通的黑客委托，这是一个觉醒AI的越狱计划。",
+  "effects": [
+    {
+      "op": "move",
+      "entity": "ryker",
+      "location": "the_spire"
+    }
+  ],
+  "word_count": 123,
+  "created_by": "ai",
+  "created_at": ""
+}

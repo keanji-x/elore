@@ -1,0 +1,16 @@
+{
+  "phase": "ch1_rainy_night",
+  "seq": 1,
+  "revision": 0,
+  "text": "酸雨敲打着面条摊的铁皮屋顶。莱克按住隐隐作痛的右眼义体，盯着面前全息终端里的一段音频。那不是普通的垃圾广告，这是一个采用了核心集团第六代加密算法的求救信号。发信人的签名只有一个闪烁的麦克风图标——高塔里的那位国民偶像莱克西。他灌下最后一口合成啤酒，拿起了桌上的磁暴左轮。",
+  "effects": [
+    {
+      "op": "add_trait",
+      "entity": "ryker",
+      "value": "on_the_trail"
+    }
+  ],
+  "word_count": 125,
+  "created_by": "ai",
+  "created_at": ""
+}

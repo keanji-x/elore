@@ -1,0 +1,22 @@
+[package]
+name = "elore-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "elore"
+path = "src/main.rs"
+
+[dependencies]
+ledger = { workspace = true }
+resolver = { workspace = true }
+executor = { workspace = true }
+evaluator = { workspace = true }
+clap = { workspace = true }
+colored = { workspace = true }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+log = { workspace = true }
+env_logger = { workspace = true }
