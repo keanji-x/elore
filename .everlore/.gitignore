@@ -1,0 +1,5 @@
+# Build artifacts — regenerate with `elore build`
+*
+!.gitignore
+!phases/
+!phases/**
