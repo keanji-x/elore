@@ -1,850 +1,547 @@
-# EverLore v2 架构：四层叙事引擎
+# Elore — 核心设计
 
-## 核心命题
+## 1. 设计目标
 
-> **故事 = 角色 × 欲望 × 冲突**
-> 
-> 唯一的可编辑表面是角色 JSON。一切剧情围绕角色展开。
-> 角色定义自己的环境视图、动机、期望行为。角色 JSON 就是 ground truth。
+Elore 的目标不是“自动把小说写漂亮”。
+它的目标是把长篇叙事创作里最容易失控的部分收束成一个可靠流程：
 
----
+1. 当前到底在写哪一段叙事任务
+2. 这段文本到底让世界发生了什么变化
+3. 这段任务到底是否真的完成
+4. 在长期创作中，谁知道什么、谁在哪里、关系如何变化，能否始终保持一致
 
-## 总体架构
+所以 Elore 的核心价值不是文风生成，而是：
 
-```
-                    ┌─────────────────────────────┐
-                    │        Character JSON        │ ← 唯一人工编辑入口
-                    │   (initial state + goals)    │
-                    └──────────────┬──────────────┘
-                                   │
-    ═══════════════════════════════════════════════════════════
-    ║                    Layer 1: Engine                      ║
-    ║                   (State / 事实层)                       ║
-    ║                                                         ║
-    ║   graph[N] = fold(initial_entities, effects[1..N])      ║
-    ║   + Datalog reasoning → derived facts                   ║
-    ║                                                         ║
-    ║   输入: character JSON + effect logs                     ║
-    ║   输出: snapshot (世界快照) + derived facts              ║
-    ║   记忆: 无 (纯确定性 replay)                             ║
-    ║   成本: 零 token                                        ║
-    ═══════════════════════════════════════════════════════════
-                    │
-                    │  snapshot + derived_facts + effect_list
-                    │            ▲
-                    │            │ dramatic_intent + expected constraints
-                    ▼            │
-    ═══════════════════════════════════════════════════════════
-    ║                   Layer 2: Director                     ║
-    ║                   (Drama / 意图层)                       ║
-    ║                                                         ║
-    ║   validate(snapshot, dramatic_intent)                    ║
-    ║   construct prompt with directing notes                 ║
-    ║                                                         ║
-    ║   输入: Layer 1 snapshot                                 ║
-    ║   输出: validated prompt + effect_list + director_notes  ║
-    ║   记忆: 无 (纯校验函数)                                  ║
-    ║   成本: 低 token (意图校验)                               ║
-    ═══════════════════════════════════════════════════════════
-                    │
-                    │  prompt + effect_list + director_notes
-                    │            ▲
-                    │            │ finished text + annotated effects
-                    ▼            │
-    ═══════════════════════════════════════════════════════════
-    ║                    Layer 3: Author                      ║
-    ║                   (Text / 文本层)                        ║
-    ║                                                         ║
-    ║   text = author(prompt)   ← 纯函数，无记忆              ║
-    ║                                                         ║
-    ║   输入: prompt                                           ║
-    ║   输出: text + annotated_effects                         ║
-    ║   记忆: 无 (same input → same output → skip)            ║
-    ║   成本: 高 token (文本生成，但可 memoize)                ║
-    ═══════════════════════════════════════════════════════════
-                    │
-                    │  text
-                    │            ▲
-                    │            │ feedback (扩写/修改/不合理/精彩)
-                    ▼            │
-    ═══════════════════════════════════════════════════════════
-    ║                    Layer 4: Reader                      ║
-    ║                  (Memory / 读者层)                       ║
-    ║                                                         ║
-    ║   唯一有记忆的层：长期记忆 + 短期记忆                      ║
-    ║   跨章节一致性校验 + 阅读体验反馈                          ║
-    ║                                                         ║
-    ║   输入: text + 历史记忆                                   ║
-    ║   输出: feedback (路由到正确的层)                          ║
-    ║   记忆: 有 (唯一有状态的层)                                ║
-    ║   成本: 中 token (阅读理解)                               ║
-    ═══════════════════════════════════════════════════════════
-```
+**把叙事过程从“靠脑子硬撑”变成“可读、可查、可审阅、可回放的状态系统”。**
 
 ---
 
-## Layer 1: Engine (事实层)
+## 2. 核心定位
 
-### 职责
+Elore 是一个 **phase-first 的叙事操作系统**。
 
-维护世界状态的 **单一真相源 (Single Source of Truth)**。
-所有状态变更通过 effects 表达，所有查询通过 Datalog 推理。
+它不是：
+- chapter-first 的写作工具
+- prompt 集合
+- metadata 装饰层
+- 全自动故事发现引擎
 
-### 数据模型
+它是：
+- 一个用 phase 管理创作任务的系统
+- 一个用 beat 提交文本和状态变化的系统
+- 一个用 snapshot 保持 continuity 的系统
+- 一个用 status / review 管理完成度的系统
 
+如果用一句话概括：
+
+**Elore 不负责替作者产生灵感，它负责让作者不那么容易把故事写崩。**
+
+---
+
+## 3. 设计原则
+
+### 3.1 Phase-first
+
+创作控制流只围绕 `phase`。
+
+原因很简单：
+- chapter 更像输出切片
+- phase 才是稳定的创作任务单元
+- status / submit / approve 只有绑定 phase 才有清晰语义
+
+因此：
+- planning 用 phase
+- writing 用 phase
+- review 用 phase
+- completion 用 phase
+
+chapter 只应该出现在导出和阅读层，而不是创作控制层。
+
+### 3.2 状态优先于文本
+
+文本可以精彩，也可以平淡。
+但无论文本如何，系统首先要知道：
+
+- 谁移动了
+- 谁知道了什么
+- 谁和谁关系变了
+- 谁身上新增了什么状态
+- 哪些目标推进或失败了
+
+如果一段文本不能被映射到这些变化，它对 Elore 来说就没有完成结构化提交。
+
+### 3.3 结构必须参与创作，而不是事后补录
+
+如果用户可以先把小说写完，再机械补 effect，那么结构层就会退化成外壳。
+
+所以 Elore 的设计必须强制结构参与创作过程：
+- beat 绑定 effects
+- phase 定义先于提交
+- submit 依赖真实检查
+- note/score/tags 回流修改
+
+### 3.4 完成度必须可信
+
+系统绝不能在“什么都没检查”的时候返回“完成”。
+
+因此：
+- 空约束不能算完成
+- 未标注不能算通过 L4
+- 无法自动验证的约束要显式暴露
+- submit 必须由评估 gate 住
+
+### 3.5 一套命令，一套心智模型
+
+CLI 不应该同时承载 chapter-first 和 phase-first 两套模型。
+
+如果命令模型混乱，用户会立刻失去信任：
+- 不知道该相信文档还是帮助信息
+- 不知道当前是哪个版本的工作流
+- 不知道哪些能力真的可依赖
+
+因此顶层命令必须服务于单一工作流。
+
+### 3.6 系统必须诚实
+
+方向对但还没实现，不等于已经成熟。
+
+Elore 必须区分：
+- 已经可依赖的能力
+- 有部分落地但还不能完全自动验证的能力
+- 只是未来方向的能力
+
+比如 synopsis-only 推导，如果还只是保守默认值，就必须明确标记为 derived，而不是假装成完整约束。
+
+---
+
+## 4. 核心概念
+
+### 4.1 Project
+
+Project 是整个作品或创作仓库。
+
+它包含：
+- entities
+- secrets
+- goals
+- phases
+- history
+- annotations
+- 当前 active phase
+
+Project 不是文本容器。
+文本属于 beats，导出文档属于 `gen`。
+
+### 4.2 Phase
+
+Phase 是唯一的工作单元。
+
+一个 phase 代表一段有明确叙事功能的弧线，比如：
+- 相遇
+- 对峙
+- 揭露
+- 高潮
+- 结局
+
+它必须回答的问题是：
+- 这段叙事要完成什么任务
+- 结束时世界要变成什么样
+- 至少要发生哪些变化
+- 文本大概要写到什么程度
+- 审阅通过的最低标准是什么
+
+Phase 不是章节标题。
+它更像“当前创作合同”。
+
+### 4.3 Beat
+
+Beat 是最小原子提交。
+
+它绑定：
+- `text`
+- `effects`
+- `word_count`
+- `revision metadata`
+
+beat 必须绑定 effects，原因有三个：
+
+1. 让文本和状态变化保持一一对应
+2. 让修订和回滚保持一致
+3. 强制作者或 AI 回答“这段到底推进了什么”
+
+如果没有 effect，系统只能知道你写了很多字，不能知道你推进了多少叙事。
+
+### 4.4 Effect
+
+Effect 是世界状态变化的最小声明。
+
+例如：
+- `move(kian, oasis_gate)`
+- `reveal(oasis_truth, kian)`
+- `add_trait(kian, hunted)`
+- `add_rel(kian, nova, hostile)`
+
+Effect 不是文学描述。
+它是叙事层面的结构化变化记录。
+
+Elore 只通过 effects 理解“发生了什么”。
+
+### 4.5 Snapshot
+
+Snapshot 是当前世界状态的可读视图，不是草稿。
+
+它来自：
+
+```text
+Snapshot = fold(genesis, history up to phase)
 ```
-WorldState = fold(GenesisEntities, Effects[1..N])
+
+Snapshot 用来回答：
+- 人在哪
+- 谁知道哪些秘密
+- 谁和谁是什么关系
+- 哪些目标仍未完成
+- 哪些状态已发生变化
+
+Snapshot 是 continuity 的单一事实源。
+
+### 4.6 Annotation
+
+Annotation 属于审阅层，不属于评论区。
+
+它的作用是把修改压力结构化：
+- 哪个 beat 低分
+- 为什么低分
+- 缺少什么标签
+- 哪些问题要优先返工
+
+没有 annotation，说明 L4 还没有真正发生。
+
+---
+
+## 5. 数据流
+
+Elore 的最小数据流是：
+
+```text
+Genesis -> Effects -> Snapshot -> Status/Review -> Gen
 ```
 
-#### 角色 JSON (Genesis State)
+更完整地说：
 
-角色 JSON 是唯一的人工编辑入口。它定义了角色的初始状态，是不可变的创世纪快照。
+```text
+Project setup
+  -> define phase
+  -> checkout phase
+  -> add beat(text + effects)
+  -> history replay
+  -> snapshot rebuild
+  -> status evaluation
+  -> add note / score / tags
+  -> submit
+  -> approve / reject
+  -> gen
+```
+
+这个流程的重点不是“生成很快”，而是：
+
+**每一步都能回答现在离完成还差什么。**
+
+---
+
+## 6. 四层约束模型
+
+Elore 采用四层约束，不是因为分层本身优雅，而是因为叙事完成度本来就不是一个维度。
+
+### 6.1 L1 · State
+
+职责：
+保证世界状态合法。
+
+L1 处理两类约束：
+- `invariants`：写作过程中任何时候都不能违反
+- `exit_state`：phase 结束时必须达到
+
+L1 是硬边界。
+如果 L1 不过，系统就不能继续假装当前 beat 或 phase 合法。
+
+### 6.2 L2 · Drama
+
+职责：
+保证这段 phase 确实推进了叙事任务，而不是只增长字数。
+
+L2 可以包含：
+- `min_effects`
+- 关系变化数量
+- reveal 数量
+- 基础 intents
+
+L2 的最低产品价值不是“复杂戏剧本体论”，而是防止空转。
+
+也就是说，L2 首先要回答：
+
+**这段写完以后，故事真的往前走了吗？**
+
+### 6.3 L3 · Writing
+
+职责：
+控制文本产出结构。
+
+L3 可验证部分：
+- total words
+- per beat words
+- writing plan 覆盖度
+
+L3 软约束：
+- POV
+- tone
+- tone_arc
+- guidance
+
+这些软约束可以存在，但如果还不能自动判定是否满足，系统必须诚实显示，而不是静默算通过。
+
+### 6.4 L4 · Reader
+
+职责：
+把“可读性”和“修订压力”纳入流程。
+
+L4 最低必须支持：
+- 未标注 = not checked
+- 平均分阈值
+- 低分 beat 数量限制
+- required tags 检查
+
+L4 不是为了追求客观审美分数。
+它的作用是把“哪里该改”变成可操作事实。
+
+---
+
+## 7. 生命周期模型
+
+一个 phase 的生命周期应当是：
+
+```text
+locked -> ready -> active -> reviewing -> approved
+```
+
+### 7.1 locked
+
+前置依赖尚未满足。
+
+### 7.2 ready
+
+可以开始，但还没进入当前工作上下文。
+
+### 7.3 active
+
+当前唯一正在创作的 phase。
+
+Elore 默认同一时间只有一个 active phase。
+原因不是技术限制，而是为了抑制长篇创作中的上下文漂移。
+
+### 7.4 reviewing
+
+已经请求审阅，但还没最终通过。
+
+进入 reviewing 的前提不是“作者感觉差不多了”，而是：
+- beat 已提交
+- status 已检查
+- submit gate 已通过
+
+### 7.5 approved
+
+这个 phase 被视为完成，后续 phase 可以依赖它。
+
+approved 的意义是“上游语义已经稳定”。
+如果 approved 还能随意漂移，整个依赖链都会失去可靠性。
+
+---
+
+## 8. 命令模型
+
+顶层命令必须只服务于 phase-first 工作流。
+
+当前应保留的核心命令是：
+
+```text
+init
+new
+add entity|entities|secret|phase|beat|note
+read snapshot|history|phase|beats
+plan
+status
+checkout
+submit
+approve
+reject
+gen
+```
+
+这些命令分别承担：
+
+- `add phase`
+定义工作单元
+
+- `checkout`
+进入当前工作上下文
+
+- `add beat`
+提交文本和变化
+
+- `read snapshot`
+读取事实状态
+
+- `read phase`
+读取约束定义
+
+- `status`
+读取真实完成度
+
+- `submit / approve / reject`
+管理审阅闭环
+
+- `gen`
+输出连续文本
+
+命令的关键不是多，而是语义一致。
+
+---
+
+## 9. 为什么 chapter 不是一等概念
+
+chapter 依然有价值，但只在导出层有价值。
+
+chapter 适合：
+- 作为阅读切片
+- 作为平台发布单位
+- 作为输出文档结构
+
+chapter 不适合：
+- 作为创作控制流单位
+- 作为约束管理单位
+- 作为审阅状态单位
+
+因为 chapter 太容易被字数、节奏、平台规则左右。
+phase 才真正对应“这一段叙事要完成什么”。
+
+所以 Elore 的原则是：
+
+**用 phase 创作，用 chapter 导出。**
+
+---
+
+## 10. synopsis-only 的正确理解
+
+synopsis-only 是降低配置门槛的方法，不是魔法。
+
+如果用户只给：
 
 ```json
-{
-  "type": "character",
-  "id": "kian",
-  "name": "基安",
-  "traits": ["废土拾荒者", "极其渴望水源"],
-  "location": "wasteland",
-  "inventory": ["旧式防毒面具", "电磁短刀"],
-  "beliefs": ["绿洲的财阀藏匿了世界上最后一条干净的地下水脉"],
-  "relationships": [],
-  "tags": ["ch01", "ch02"]
-}
+{"id":"confrontation","synopsis":"基安与诺娃在门前对峙"}
 ```
 
-#### 欲望树 (Goal Tree, YAML)
+系统应该做的是：
+- 尝试生成一份最小可工作的初稿约束
+- 标注来源为 `synopsis_derived`
+- 告诉用户哪些部分仍需补充
+- 在无法验证的地方保持保守
 
-欲望树驱动叙事因果。递归结构：`want → problem → solution → children`。
+系统不应该做的是：
+- 假装已经完整理解剧情目标
+- 生成看起来成熟但其实空洞的约束
+- 最后返回 `complete: true`
 
-```yaml
-type: character
-id: kian
-goals:
-  - id: survive_drought
-    want: 找到干净水源生存下去
-    problem: 荒野污染严重，水资源枯竭
-    solution: 潜入财阀的最后绿洲
-    status: active           # background | active | blocked | resolved | failed
-    children:
-      - id: infiltrate_oasis
-        want: 潜入绿洲核心区
-        problem: 绿洲外围有致命的安保系统
-        solution: null        # null = 悬念
-        status: active
-        conflicts_with: [nova/harvest_intruder]
-```
+synopsis-only 的设计原则是：
 
-#### Effect Log (history.jsonl)
-
-所有状态变更记录在 append-only 的事件日志中。角色 JSON **永远不被 effects 修改**。
-
-```jsonl
-{"chapter":"ch03","seq":1,"op":"remove_item","entity":"kian","item":"旧式防毒面具"}
-{"chapter":"ch03","seq":2,"op":"add_item","entity":"nova","item":"旧式防毒面具"}
-{"chapter":"ch03","seq":3,"op":"add_trait","entity":"kian","value":"被追踪"}
-```
-
-支持的 Effect 操作：
-
-| 操作 | 语法 | 影响字段 |
-|------|------|---------|
-| `add_trait` | `add_trait(entity, trait)` | `traits` |
-| `remove_trait` | `remove_trait(entity, trait)` | `traits` |
-| `add_item` | `add_item(entity, item)` | `inventory` |
-| `remove_item` | `remove_item(entity, item)` | `inventory` |
-| `move` | `move(entity, location)` | `location` |
-| `add_rel` | `add_rel(entity, target, rel)` | `relationships` |
-| `remove_rel` | `remove_rel(entity, target)` | `relationships` |
-| `set_belief` | `set_belief(entity, old, new)` | `beliefs` |
-| `resolve_goal` | `resolve_goal(owner, goal_id, solution)` | `goals[].status` |
-| `fail_goal` | `fail_goal(owner, goal_id)` | `goals[].status` |
-| `emerge_goal` | `emerge_goal(owner, goal_id, want, ...)` | `goals[]` |
-
-#### 信息披露层 (Secrets / known_by)
-
-> [!IMPORTANT]
-> 当前 EverLore v1 缺失的关键维度。控制"谁在什么时候知道什么"。
-
-```yaml
-secrets:
-  - id: oasis_truth
-    content: 绿洲的能源来自活人培养皿
-    known_by: []                  # 当前无人知晓
-    revealed_to_reader: false     # 读者也不知道 → 悬疑
-    dramatic_function: reversal   # 导演标注：这是反转用的
-```
-
-Effect 扩展：
-
-```jsonl
-{"chapter":"ch05","seq":4,"op":"reveal","secret":"oasis_truth","to":"kian"}
-{"chapter":"ch06","seq":1,"op":"reveal","secret":"oasis_truth","to":"nova"}
-{"chapter":"ch06","seq":2,"op":"reveal_to_reader","secret":"oasis_truth"}
-```
-
-这使得以下叙事技巧可以被形式化：
-
-| 技巧 | known_by 状态 | revealed_to_reader |
-|------|--------------|-------------------|
-| **悬疑** | 无人知晓 | false |
-| **戏剧性反讽** | 角色 A 知道 | true（读者知道但角色 B 不知道） |
-| **扮猪吃老虎** | 角色自己知道 | false（读者不知道） |
-| **误导** | 角色错误地相信 | true（读者被同步误导） |
-| **揭示/反转** | → 转为已知 | true（在关键时刻揭露） |
-
-### Snapshot 构建
-
-```rust
-fn build_snapshot(chapter: &str) -> Snapshot {
-    let mut state = load_genesis_entities();     // 加载角色 JSON
-    let effects = load_effects_up_to(chapter);   // 从 history.jsonl 读取
-
-    for effect in effects {
-        state.apply(effect);                     // 确定性 fold
-    }
-
-    let datalog_facts = translate_to_datalog(&state);  // 翻译为 Datalog
-    let derived = run_reasoning(datalog_facts);         // 推理
-
-    Snapshot {
-        entities: state,
-        derived_facts: derived,   // can_meet, danger, suspense, active_conflict...
-        secrets: state.secrets,   // 信息披露状态
-    }
-}
-```
-
-### Datalog 推理规则
-
-内置规则（确定性推导，零 token）：
-
-```datalog
-% 社交：谁能相遇
-can_meet(?A, ?B) :- at(?A, ?P), at(?B, ?P), ?A != ?B, character(?A), character(?B).
-
-% 敌对：敌对势力成员
-enemy(?A, ?B) :- member(?A, ?S1), member(?B, ?S2), rival(?S1, ?S2), ?A != ?B.
-
-% 危险：敌人相遇
-danger(?A, ?B) :- can_meet(?A, ?B), enemy(?A, ?B).
-
-% 欲望引擎：悬念
-suspense(?Owner, ?Goal) :- goal_status(?Owner, ?Goal, active), ~has_solution(?Owner, ?Goal).
-
-% 欲望引擎：活跃冲突
-active_conflict(?OA, ?GA, ?OB, ?GB) :-
-  conflicts(?OA, ?GA, ?OB, ?GB),
-  goal_status(?OA, ?GA, active),
-  goal_status(?OB, ?GB, active).
-
-% 欲望引擎：解锁
-unblocked(?Owner, ?Goal) :-
-  goal_status(?Owner, ?Goal, blocked),
-  blocks(?BOwner, ?BGoal, ?Owner, ?Goal),
-  goal_status(?BOwner, ?BGoal, failed).
-
-% 信息不对称检测
-dramatic_irony(?Secret) :-
-  secret_known_by(?Secret, ?Char),
-  secret_revealed_to_reader(?Secret),
-  secret_not_known_by(?Secret, ?OtherChar).
-```
+**宁可保守，也不要装懂。**
 
 ---
 
-## Layer 2: Director (意图层)
+## 11. 真正的创作闭环
 
-### 职责
+Elore 的真实闭环不是“prompt -> 文本”。
 
-设计剧情走向。操作对象是 **戏剧性意图 (dramatic intent)**，不是 effects。
-不能直接修改 prompt，只能通过向 Layer 1 提交 effects 间接影响 prompt。
+它的闭环应该是：
 
-### 数据模型
-
-#### Drama Node
-
-每章一个 drama node，声明该章的戏剧性目标：
-
-```yaml
-# .everlore/drama/ch03.yaml
-chapter: ch03
-dramatic_intents:
-  - type: confrontation
-    between: [kian, nova]
-    at: oasis_core
-    depends_on: [kian.location, nova.location, nova.inventory]
-    
-  - type: reversal
-    target: nova
-    trigger: "发现与核心信念矛盾的事实"
-    secret: oasis_truth
-    timing: climax
-
-  - type: suspense_resolution
-    goal: kian/infiltrate_oasis
-    expected_outcome: resolved
-
-pacing:
-  build_up: 0.5      # 前半段铺垫
-  climax: 0.35        # 高潮
-  resolution: 0.15    # 收尾
-
-director_notes:
-  highlights: ["净水池干涸露出培养皿"]
-  tone_arc: "冰冷理性 → 信仰崩塌 → 怒火"
-  pov: nova
+```text
+phase definition
+  -> snapshot reading
+  -> beat commits
+  -> status evaluation
+  -> annotation
+  -> revision
+  -> review state transition
+  -> compiled output
 ```
 
-#### Director Notes (给 Author 的导演指令)
+也就是：
 
-```yaml
-director_notes:
-  required_effects:     # 必须发生的 effects
-    - remove_item(kian, 电磁短刀)
-    - reveal(oasis_truth, nova)
-  suggested_effects:    # 建议发生，Author 可偏离
-    - add_trait(nova, 动摇)
-  highlights:           # 高光段落提示
-    - "培养皿的视觉冲击"
-    - "诺娃放下共振刃的瞬间"
-  pov: nova
-  pov_constraints:
-    - "严格 nova 视角，禁止描写 kian 内心"
-    - "nova 的义眼数据可以作为观察 kian 的手段"
-  tone: "从机械的猎杀效率感，逐渐转向信仰崩塌的失控"
-```
+1. 定义当前 phase
+2. 理解当前世界状态
+3. 提交 beat
+4. 检查是否真的推进目标
+5. 审阅并标注问题
+6. 修订
+7. 请求通过
+8. 导出文本
 
-### 1↔2 通信协议
-
-#### 1→2 (Engine → Director)
-
-```
-EngineOutput {
-  snapshot_before:   Snapshot,      // 本章开始时的世界状态
-  snapshot_after:    Snapshot,      // 应用 effects 后的世界状态
-  effect_list:       Vec<Effect>,   // 本章发生的 effects
-  derived_facts:     Vec<Fact>,     // Datalog 推导结果
-  secrets_state:     Vec<Secret>,   // 当前信息披露状态
-}
-```
-
-#### 2→1 (Director → Engine)
-
-```
-DirectorFeedback {
-  verdict:           Accept | Reject,
-  dramatic_intents:  Vec<DramaticIntent>,   // 期望的戏剧性效果
-  // 注意：Director 不给出具体 effects，
-  // 而是给出意图，由 Engine 搜索满足意图的 effects
-}
-```
-
-#### 循环逻辑
-
-```
-loop {
-    engine_output = engine.build_snapshot(chapter);
-    verdict = director.validate(engine_output, drama_node);
-
-    match verdict {
-        Accept => break,   // 收敛
-        Reject(intents) => {
-            // Engine 根据意图搜索可行的 effects
-            candidate_effects = engine.search_effects(intents);
-            // 人工确认（或自动选择最优解）
-            engine.apply_effects(candidate_effects);
-        }
-    }
-}
-```
-
-**收敛条件：** 所有 `dramatic_intents` 都被 `derived_facts` 满足。
+这个闭环一旦成立，Elore 就不再是“一个很漂亮的叙事外壳系统”，而是真正影响创作过程的工具。
 
 ---
 
-## Layer 3: Author (文本层)
+## 12. 系统边界
 
-### 职责
+Elore 不试图解决所有创作问题。
 
-根据 prompt 生成文本。**纯函数，无记忆。**
+它不直接负责：
+- 句子是否足够文学
+- 风格是否足够独特
+- 哪个转折最天才
+- 哪个 reveal 最震撼
 
-```
-text = author(prompt)
-```
+它真正负责的是：
+- 保证状态一致
+- 保证任务边界清晰
+- 保证完成度可信
+- 保证审阅可以回流
 
-Same input → same output → skip. 这是整个系统做增量更新的关键性质。
+这听起来不浪漫，但它对长篇创作最关键。
 
-### 数据模型
-
-#### Prompt (Author 的唯一输入)
-
-Prompt 由 Director 构造，包含：
-
-```markdown
-# 小说写作上下文
-
-当前章节: ch03
-主视角 (POV): nova
-
-## 前情回顾（自动生成）
-在 ch01-ch02 中发生了以下变化：
-- kian: 获得特质 "被追踪"
-- kian: 失去物品 "旧式防毒面具"
-
-## 本章大纲
-[Director 审核通过的场景节拍]
-
-## 角色状态
-[从 snapshot 提取，POV 过滤后的角色信息]
-
-## 角色目标（欲望引擎）
-[POV 角色的完整目标树 + 活跃冲突]
-
-## 信息控制
-[本章 POV 角色已知/未知的秘密]
-
-## 导演指令
-[高光、节奏、语调、视角约束]
-
-## 必须发生的事件
-[required_effects 的自然语言描述]
-
-## 写作要求
-[文风、视角限制、一致性规则]
-```
-
-#### Author Output
-
-```
-AuthorOutput {
-  text:               String,        // 生成的文本
-  annotated_effects:   Vec<Effect>,   // 文本中实际发生的 effects
-  deviations:          Vec<Deviation>,// 与 required_effects 的偏离及理由
-}
-```
-
-### 2↔3 通信协议
-
-#### 2→3 (Director → Author)
-
-```
-DirectorToAuthor {
-  prompt:            Prompt,
-  required_effects:  Vec<Effect>,    // 必须发生
-  suggested_effects: Vec<Effect>,    // 建议发生
-  director_notes:    DirectorNotes,  // 高光/节奏/语调
-}
-```
-
-#### 3→2 (Author → Director)
-
-```
-AuthorToDirector {
-  text:               String,
-  annotated_effects:   Vec<Effect>,
-  deviations:          Vec<Deviation>,  // Author 的创造性偏离
-}
-```
-
-#### 循环逻辑
-
-```
-loop {
-    author_output = author.write(prompt);
-
-    // Director 检查 required_effects 是否被满足
-    missing = required_effects - author_output.annotated_effects;
-    if missing.is_empty() {
-        // 吸收 Author 的创造性偏离
-        // 如果 Author 标注了 required 以外的 effects，
-        // Director 将它们提交给 Engine 做一致性校验
-        engine.validate_effects(author_output.annotated_effects);
-        break;  // 收敛
-    } else {
-        // Author 遗漏了必须事件，重新指导
-        prompt = director.revise_prompt(prompt, missing);
-    }
-}
-```
-
-**收敛条件：** `required_effects ⊆ annotated_effects` 且所有 effects 通过 Engine 一致性校验。
+因为长篇最容易死的，不是灵感，而是一致性、完成度错觉和失控的修改成本。
 
 ---
 
-## Layer 4: Reader (读者层)
+## 13. 当前实现优先级
 
-### 职责
+如果按产品落地顺序，这个系统应该优先保证：
 
-模拟真实读者的阅读体验。**唯一有记忆的层。**
+### P0
+- phase-first 命令模型统一
+- 空约束不再算完成
+- submit 依赖真实 gate
+- snapshot / status / review 形成可信闭环
 
-### 数据模型
+### P1
+- L2/L3/L4 里“已知存在但尚未自动验证”的部分显式化
+- synopsis-only 推导可读、可解释
 
-#### 长期记忆 (Long-term Memory)
+### P2
+- `plan` 成为真正的创作协同面板
+- 能显示当前 phase 的 blockers、未解目标、秘密不对称、下一步建议
 
-跨章节持久化的结构化知识：
+### P3
+- 更强的创作发现辅助
+- 例如建议下一 beat、暴露 tension 缺口、揭示 reveal timing 风险
 
-```yaml
-characters_known:
-  kian:
-    first_appeared: ch01
-    key_traits_observed: [废土拾荒者, 极其渴望水源]
-    key_events:
-      - ch01: 丢失面具，潜入绿洲
-      - ch02: 发现培养皿真相
-    emotional_arc: 绝望 → 狂暴 → 联合
-
-  nova:
-    first_appeared: ch01
-    key_traits_observed: [赛博义体化, 绝对理性]
-    key_events:
-      - ch02: 信仰崩塌，放下武器
-    emotional_arc: 冰冷 → 震惊 → 愤怒
-
-world_facts_known:
-  - "绿洲核心区有净水池"           # ch01 获知
-  - "绿洲能源来自活人培养皿"       # ch02 获知
-
-unresolved_questions:
-  - "财阀高层知不知道真相？"
-  - "还有其他绿洲吗？"
-
-emotional_state:
-  tension_level: 0.85
-  sympathy_towards: {kian: 0.9, nova: 0.7}
-```
-
-#### 短期记忆 (Short-term Memory)
-
-当前章节阅读过程中的即时状态：
-
-```yaml
-current_chapter: ch02
-reading_position: paragraph_12
-current_tension: rising
-recent_impressions:
-  - "诺娃的战斗描写非常有压迫感"
-  - "培养皿的揭露节奏恰到好处"
-pending_concerns:
-  - "kian 的电磁短刀破坏控制阀有点太巧了"
-```
-
-### Feedback 类型与路由
-
-Reader 的反馈自带路由信息，分发到正确的层：
-
-```yaml
-feedback:
-  - type: fact_inconsistency        # → 路由到 Layer 1
-    chapter: ch07
-    description: "Kian 在第三章丢了面具，但第七章又戴着了"
-    severity: critical
-    route_to: engine
-
-  - type: dramatic_issue             # → 路由到 Layer 2
-    chapter: ch05
-    description: "诺娃的信仰崩塌来得太突然，缺少铺垫"
-    suggestion: "在 ch04 加入诺娃发现第一个异常的伏笔"
-    severity: major
-    route_to: director
-
-  - type: prose_quality              # → 路由到 Layer 3
-    chapter: ch03
-    paragraph: 7
-    description: "这段打斗写得太流水账，缺少感官细节"
-    severity: minor
-    route_to: author
-
-  - type: positive_signal            # → 存档为正反馈
-    chapter: ch02
-    paragraph: 15
-    description: "培养皿揭露的视觉冲击力极强"
-    route_to: archive
-```
-
-### 3↔4 通信协议
-
-#### 3→4 (Author → Reader)
-
-```
-AuthorToReader {
-  chapter:  String,
-  text:     String,
-}
-```
-
-#### 4→3 (Reader → Author, 或路由到其他层)
-
-```
-ReaderFeedback {
-  feedbacks:  Vec<Feedback>,   // 每条 feedback 自带 route_to
-}
-```
-
-#### 循环逻辑
-
-```
-loop {
-    reader_feedback = reader.read(chapter, text);
-
-    // 按路由分发
-    for fb in reader_feedback {
-        match fb.route_to {
-            Engine   => engine_issues.push(fb),    // 上抛到 Layer 1
-            Director => director_issues.push(fb),  // 上抛到 Layer 2
-            Author   => author_issues.push(fb),    // 本层处理
-            Archive  => positive_signals.push(fb), // 存档
-        }
-    }
-
-    if author_issues.is_empty() {
-        break;  // 本层收敛
-    }
-
-    // Author 根据 Reader 的纯文笔反馈修改文本
-    text = author.revise(text, author_issues);
-}
-
-// 如果有上抛的问题，触发外层循环
-if !engine_issues.is_empty() {
-    // 回到 1↔2 循环
-}
-if !director_issues.is_empty() {
-    // 回到 2↔3 循环
-}
-```
-
-**收敛条件：** Reader 无 critical/major 反馈，或所有反馈已被路由到正确的层处理。
+高级能力可以慢慢长。
+但 P0 不稳，后面所有扩展都会建立在不可信的地基上。
 
 ---
 
-## 非线性编辑 (吃书机制)
+## 14. 最后总结
 
-### 核心原理
+Elore 的核心设计可以压缩成一句话：
 
-每层都是其输入的纯函数（Reader 除外）。因此：
+**用 phase 定义当前工作，用 beat 提交文本与变化，用 snapshot 保持 continuity，用 status 和 review 保证这段故事真的完成。**
 
-```
-Layer 1:  snapshot[N] = fold(genesis, effects[1..N])          // 确定性
-Layer 2:  prompt[N]   = director(snapshot[N], drama[N])       // 确定性
-Layer 3:  text[N]     = author(prompt[N])                     // 确定性 (memoizable)
-Layer 4:  memory[N]   = reader(memory[N-1], text[N])          // 有状态，但可从头 replay
-```
-
-### 变更传播流程
-
-当用户修改了 `effects[ch03]`（吃书）：
-
-```
-修改点: effects[ch03]
-         │
-         ▼
-Layer 1: 从 ch03 开始重新 fold → 生成 new_snapshot[ch03..ch_last]
-         │
-         │  对每个受影响的章节:
-         ▼
-         diff = new_snapshot[N] - old_snapshot[N]
-         │
-         ├── diff 为空 → 提前终止，后续章节不受影响
-         │
-         └── diff 非空 → 通知 Layer 2
-                  │
-                  ▼
-Layer 2:  new_prompt[N] = director(new_snapshot[N], drama[N])
-          │
-          ├── new_prompt[N] == old_prompt[N] → skip Layer 3
-          │
-          └── new_prompt[N] != old_prompt[N] → 通知 Layer 3
-                   │
-                   ▼
-Layer 3:   text[N] = author(new_prompt[N])   ← 消耗 token，但精确定位到受影响章节
-                   │
-                   ▼
-Layer 4:   reader.update_memory(N, new_text[N])  ← 重读受影响章节
-```
-
-### 成本模型
-
-| 步骤 | 成本 | 说明 |
-|------|------|------|
-| Layer 1 重新 fold | **零 token** | 纯确定性 replay |
-| Layer 1 Datalog 推理 | **零 token** | Nemo 引擎本地计算 |
-| Layer 1→2 diff 比较 | **零 token** | 结构化 snapshot diff |
-| Layer 2 prompt 校验 | **零 token** | 字符串比较 |
-| Layer 3 文本重写 | **高 token** | 但仅限 diff 命中的章节 |
-| Layer 4 记忆更新 | **中 token** | 但仅重读变化的文本 |
-
-**关键优化：** diff 提前终止 + prompt memoization，使得大部分吃书操作只需要重写 1-2 个章节的文本。
-
-### What-If 分析
-
-```bash
-# 试试 "如果 Kian 在第 2 章就死了会怎样？"
-everlore whatif ch02 --effect "kill(kian)" --dry-run
-
-# 输出：
-# ch02: snapshot changed (kian.status → dead)
-# ch03: prompt changed (kian 不再出现在 participants 中)
-# ch04: prompt changed (所有 kian 相关剧情需要重写)
-# ch05: prompt unchanged (kian 已不在场景中)
-# 
-# 受影响章节: 3 / 7
-# 需要重写的文本: ch02, ch03, ch04
-# 预计 token 消耗: ~15000
-#
-# 执行? [y/N]
-```
-
----
-
-## 每层日志格式
-
-### Layer 1: Effect Log
-
-```jsonl
-{"chapter":"ch03","seq":1,"op":"remove_item","entity":"kian","item":"旧式防毒面具"}
-{"chapter":"ch03","seq":2,"op":"add_item","entity":"nova","item":"旧式防毒面具"}
-{"chapter":"ch03","seq":3,"op":"reveal","secret":"oasis_truth","to":"kian"}
-```
-
-- 纯结构化，可精确 replay
-- 每条记录是一个原子操作
-- 支持插入、删除、修改（通过 seq 定位）
-
-### Layer 2: Intent Log
-
-```jsonl
-{"chapter":"ch03","intent":"confrontation","between":["kian","nova"],"depends_on":["kian.location","nova.location"]}
-{"chapter":"ch03","intent":"reversal","target":"nova","secret":"oasis_truth","timing":"climax"}
-{"chapter":"ch03","pacing":{"build_up":0.5,"climax":0.35,"resolution":0.15}}
-```
-
-- 半结构化，声明依赖字段
-- 依赖字段用于 diff 传播时的快速过滤：
-  `if intent.depends_on ∩ diff.changed_fields == ∅ → skip`
-
-### Layer 3: Prompt Hash Log
-
-```jsonl
-{"chapter":"ch03","prompt_hash":"a1b2c3d4","version":1,"timestamp":"2026-03-28T22:00:00Z"}
-{"chapter":"ch03","prompt_hash":"e5f6g7h8","version":2,"timestamp":"2026-03-28T22:30:00Z","reason":"layer1_diff"}
-```
-
-- 只记录 prompt 的 hash —— Author 无记忆，只需判断 input 是否变了
-- 版本号用于追溯重写历史
-
-### Layer 4: Memory Log
-
-```jsonl
-{"chapter":"ch03","type":"character_update","char":"nova","observation":"信仰崩塌","emotional_impact":"high"}
-{"chapter":"ch03","type":"world_fact","fact":"绿洲能源来自培养皿","confidence":1.0}
-{"chapter":"ch03","type":"unresolved","question":"财阀高层是否知情？"}
-{"chapter":"ch03","type":"feedback","route":"director","severity":"major","desc":"铺垫不足"}
-```
-
-- 唯一有状态的日志
-- 按章节索引，支持回溯重建
-
----
-
-## 嵌套收敛模型
-
-三个循环按**由外到内的顺序收敛**：
-
-```
-Phase 1: 1↔2 收敛 (世界状态 + 剧情意图一致)
-│
-│  前几章高频迭代，建立世界观和主线冲突
-│  之后趋于稳定
-│
-└→ Phase 2: 2↔3 收敛 (文本实现了剧情意图)
-   │
-   │  每章 1-2 轮谈判，处理创造性偏差
-   │
-   └→ Phase 3: 3↔4 收敛 (文本通过读者体验检验)
-      │
-      │  最高频循环，每段文本需要打磨
-      │
-      └→ 如果 Reader 发现事实错误 → 打断，回到 Phase 1
-         如果 Reader 发现剧情问题 → 打断，回到 Phase 2
-```
-
-### 成熟项目的迭代模式
-
-```
-章节数 →  1   2   3   4   5   6   7   8   9   10
-1↔2 轮次:  5   4   3   2   1   1   1   1   1   1    ← 前期高，后期稳定
-2↔3 轮次:  2   2   2   2   2   2   2   2   2   2    ← 恒定
-3↔4 轮次:  3   3   3   3   3   3   3   3   3   3    ← 恒定
-```
-
----
-
-## 文件结构
-
-```
-mynovel/
-├── outlines/                     # 场景大纲（可选，Director 可自动生成）
-│   ├── ch01.md
-│   └── ch02.md
-├── drafts/                       # 最终文本输出 (Layer 3 产物)
-│   ├── ch01.md
-│   └── ch02.md
-└── .everlore/
-    ├── config.toml               # 项目配置
-    │
-    ├── entities/                  # Layer 1: Genesis State（唯一人工编辑入口）
-    │   ├── kian.json              #   基础属性
-    │   ├── kian.yaml              #   欲望树
-    │   ├── nova.json
-    │   ├── nova.yaml
-    │   ├── oasis_core.json        #   地点
-    │   └── secrets.yaml           #   信息披露定义
-    │
-    ├── history.jsonl              # Layer 1: Effect Log (append-only)
-    │
-    ├── snapshots/                 # Layer 1: 缓存的每章快照
-    │   ├── ch01.json
-    │   └── ch02.json
-    │
-    ├── drama/                     # Layer 2: Drama Nodes
-    │   ├── ch01.yaml
-    │   └── ch02.yaml
-    │
-    ├── intents.jsonl              # Layer 2: Intent Log
-    │
-    ├── prompts/                   # Layer 2→3: 缓存的 prompt (用于 memoize)
-    │   ├── ch01.md
-    │   └── ch02.md
-    │
-    ├── prompt_hashes.jsonl        # Layer 3: Prompt Hash Log
-    │
-    ├── reader/                    # Layer 4: Reader Memory
-    │   ├── long_term.yaml         #   长期记忆
-    │   ├── memory.jsonl           #   Memory Log
-    │   └── feedback.jsonl         #   反馈日志
-    │
-    ├── facts.rls                  # Datalog: 自动生成的事实
-    ├── rules.rls                  # Datalog: 用户自定义推理规则
-    └── results/                   # Datalog: 推理结果
-```
-
----
-
-## 与当前 EverLore v1 的关系
-
-| 概念 | v1 (当前) | v2 (本架构) |
-|------|----------|------------|
-| 状态源 | entity JSON + history.jsonl | 不变，但新增 secrets.yaml |
-| 推理 | Datalog (Nemo) | 不变，新增 `dramatic_irony` 等规则 |
-| 叙事生成 | `everlore narrate` (单步) | Layer 2 + 3 循环生成 |
-| 视角控制 | `--pov` flag | 不变，集成到 Layer 2 的 prompt 构造 |
-| 非线性编辑 | `everlore rollback` (粗粒度) | diff 传播 + prompt memoize (精细粒度) |
-| 质量控制 | `everlore suggest` (图分析) | Layer 4 Reader (语义级反馈) |
-| 信息控制 | 无 | secrets / known_by / revealed_at |
-| 剧情设计 | 人工写 outline | Layer 2 Drama Node (结构化意图) |
-
-> [!NOTE]
-> v1 的核心（角色 JSON、欲望树、Datalog 推理、POV 过滤、Event Sourcing）全部保留。
-> v2 主要是在 v1 之上叠加了：Director 意图层、Reader 记忆层、diff 传播机制、信息披露层。
+这就是它和一般写作工具的根本区别。

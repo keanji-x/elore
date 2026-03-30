@@ -73,16 +73,22 @@ pub enum NarrativeTechnique {
 // Loading
 // ══════════════════════════════════════════════════════════════════
 
-/// Container for secrets.yaml which holds a list of secrets.
+/// Container for secrets.yaml which holds a list of secrets (for deserialization).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(super) struct SecretsFile {
     #[serde(default)]
     pub(super) secrets: Vec<Secret>,
 }
 
-/// Load secrets from `.everlore/entities/secrets.yaml`.
-pub fn load_secrets(dir: &Path) -> Result<Vec<Secret>, LedgerError> {
-    let path = dir.join("secrets.yaml");
+/// Public container for writing secrets.yaml.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SecretsFileOut {
+    pub secrets: Vec<Secret>,
+}
+
+/// Load secrets from `.everlore/secrets.yaml`.
+pub fn load_secrets(everlore_dir: &Path) -> Result<Vec<Secret>, LedgerError> {
+    let path = everlore_dir.join("secrets.yaml");
     if !path.exists() {
         return Ok(Vec::new());
     }

@@ -1,8 +1,10 @@
-//! Input layer — human-editable genesis data.
+//! Input layer — card-based world data.
 //!
-//! These are the immutable creation snapshots that define the world's ground truth.
-//! Only humans edit these files. Effects never modify them directly.
+//! Cards (Markdown + YAML frontmatter) are the source of truth.
+//! Effects update cards' YAML frontmatter after build.
 
+pub mod card;
+pub mod card_writer;
 pub mod entity;
 pub mod goal;
 pub mod secret;

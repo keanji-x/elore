@@ -7,8 +7,7 @@ use colored::Colorize;
 use serde_json::json;
 
 use ledger::effect::beat::Beat;
-use ledger::state::constraint::check_assertions;
-use ledger::state::phase::Phase;
+use ledger::state::phase::{DefinitionStatus, LayerStatus, LowBeat, Phase, PhaseProgress};
 use ledger::state::phase_manager::ProjectState;
 use ledger::state::snapshot::Snapshot;
 
@@ -44,12 +43,19 @@ pub fn checkout(project: &Path, phase_id: &str) -> Result<(), Box<dyn std::error
 // status
 // ══════════════════════════════════════════════════════════════════
 
-pub fn status(project: &Path, format: Format) -> Result<(), Box<dyn std::error::Error>> {
+pub fn status(
+    project: &Path,
+    phase_filter: Option<&str>,
+    format: Format,
+) -> Result<(), Box<dyn std::error::Error>> {
     let everlore = project.join(".everlore");
     let state = ProjectState::load(&everlore);
 
-    let phase_id = match state.active_phase() {
-        Some(id) => id.to_string(),
+    let phase_id = phase_filter
+        .map(str::to_string)
+        .or_else(|| state.active_phase().map(str::to_string));
+    let phase_id = match phase_id {
+        Some(id) => id,
         None => {
             // Show plan overview
             return show_plan_overview(project, &state, format);
@@ -61,75 +67,34 @@ pub fn status(project: &Path, format: Format) -> Result<(), Box<dyn std::error::
     let annotations_dir = everlore.join("annotations");
     let entities_dir = everlore.join("entities");
 
-    let phase = Phase::load(&phases_dir, &phase_id)?;
-    let beats = Beat::load_phase(&beats_dir, &phase_id);
-    let anns = annotation::load_annotations(&annotations_dir, &phase_id);
-
-    // Build snapshot with beats as effects
-    let snap = Snapshot::build(&phase_id, &entities_dir, &everlore)?;
-
-    // ── L1: Ledger ──
-    let (inv_ok, inv_failures) = check_assertions(&snap, &phase.constraints.ledger.invariants);
-    let (exit_ok, exit_failures) = check_assertions(&snap, &phase.constraints.ledger.exit_state);
-
-    // ── L2: Resolver ──
-    let total_effects: u32 = beats.iter().map(|b| b.effects.len() as u32).sum();
-    let min_effects = phase.constraints.resolver.min_effects.unwrap_or(0);
-    let effects_met = total_effects >= min_effects;
-
-    // ── L3: Executor ──
-    let total_words = Beat::total_words(&beats);
-    let beat_count = beats.len() as u32;
-    let plan_count = phase.constraints.executor.writing_plan.len() as u32;
-    let (word_min, word_max) = phase.constraints.executor.words.unwrap_or((0, u32::MAX));
-    let words_met = total_words >= word_min && total_words <= word_max;
-
-    // ── L4: Evaluator ──
-    let avg = annotation::avg_score(&anns);
-    let min_avg = phase.constraints.evaluator.min_avg_score.unwrap_or(0.0);
-    let low = annotation::low_beats(&anns, 2);
-    let max_boring = phase
-        .constraints
-        .evaluator
-        .max_boring_beats
-        .unwrap_or(u32::MAX);
-    let eval_ok = (anns.is_empty() || avg >= min_avg) && (low.len() as u32) <= max_boring;
-
-    let all_ok = inv_ok && exit_ok && effects_met && words_met && eval_ok;
+    let progress = build_phase_progress(
+        &everlore,
+        &phases_dir,
+        &beats_dir,
+        &annotations_dir,
+        &entities_dir,
+        &phase_id,
+    )?;
 
     match format {
         Format::Json => {
             let j = json!({
-                "phase": phase_id,
-                "complete": all_ok,
-                "beats": beat_count,
-                "words": total_words,
-                "effects": total_effects,
-                "ledger": {
-                    "status": if inv_ok && exit_ok { "ok" } else { "partial" },
-                    "invariants_passing": inv_ok,
-                    "exit_state_met": exit_ok,
-                    "exit_state_pending": exit_failures,
-                },
-                "resolver": {
-                    "status": if effects_met { "ok" } else { "partial" },
-                    "effects": format!("{total_effects}/{min_effects}"),
-                },
-                "executor": {
-                    "status": if words_met { "ok" } else { "in_progress" },
-                    "words": format!("{total_words}/{word_min}-{word_max}"),
-                    "beats": format!("{beat_count}/{}", if plan_count > 0 { plan_count } else { beat_count }),
-                },
-                "evaluator": {
-                    "status": if eval_ok { "ok" } else { "needs_revision" },
-                    "avg_score": if anns.is_empty() { None } else { Some(avg) },
-                    "low_beats": low.iter().map(|(b, s, n)| json!({"beat": b, "score": s, "note": n})).collect::<Vec<_>>(),
-                },
+                "phase": progress.phase_id,
+                "complete": progress.complete,
+                "definition_status": progress.definition_status,
+                "beats": progress.beats,
+                "words": progress.words,
+                "effects": progress.effects_count,
+                "blockers": progress.blockers,
+                "ledger": progress.ledger,
+                "resolver": progress.resolver,
+                "executor": progress.executor,
+                "evaluator": progress.evaluator,
             });
             println!("{}", serde_json::to_string_pretty(&j)?);
         }
         Format::Human => {
-            let icon = if all_ok {
+            let icon = if progress.complete {
                 "✓".green()
             } else {
                 "◎".yellow()
@@ -137,79 +102,69 @@ pub fn status(project: &Path, format: Format) -> Result<(), Box<dyn std::error::
             println!(
                 "{} Phase: {} ({})",
                 icon,
-                phase_id.cyan().bold(),
-                if all_ok {
+                progress.phase_id.cyan().bold(),
+                if progress.complete {
                     "ALL ✓".green().to_string()
                 } else {
                     "进行中".yellow().to_string()
                 }
             );
+            println!(
+                "  definition: {}",
+                render_definition_status(&progress.definition_status)
+            );
             println!();
 
-            // L1
-            let l1 = if inv_ok && exit_ok {
-                "✓".green()
-            } else {
-                "✗".red()
-            };
-            println!("  {} L1·State", l1);
-            if !inv_ok {
-                for f in &inv_failures {
-                    println!("    {} invariant: {}", "✗".red(), f);
-                }
-            }
-            if !exit_ok {
-                for f in &exit_failures {
-                    println!("    {} exit_state: {}", "⏳".to_string().dimmed(), f);
-                }
-            }
-
-            // L2
-            let l2 = if effects_met {
-                "✓".green()
-            } else {
-                "◎".yellow()
-            };
             println!(
-                "  {} L2·Drama  effects: {}/{}",
-                l2, total_effects, min_effects
+                "  {} L1·State  exit_state_pending: {}",
+                render_layer_status(&progress.ledger.status),
+                progress.ledger.exit_state_pending.len()
             );
-
-            // L3
-            let l3 = if words_met {
-                "✓".green()
-            } else {
-                "◎".yellow()
-            };
             println!(
-                "  {} L3·Writing words: {}/{}-{}, beats: {}/{}",
-                l3,
-                total_words,
-                word_min,
-                word_max,
-                beat_count,
-                if plan_count > 0 {
-                    plan_count.to_string()
-                } else {
-                    "∞".into()
-                }
+                "  {} L2·Drama  effects: {}",
+                render_layer_status(&progress.resolver.status),
+                progress.resolver.effects
             );
-
-            // L4
-            let l4 = if eval_ok {
-                "✓".green()
-            } else {
-                "◎".yellow()
-            };
-            if !anns.is_empty() {
+            if !progress.resolver.intents_pending.is_empty() {
                 println!(
-                    "  {} L4·Reader  avg: {:.1}, low_beats: {}",
-                    l4,
-                    avg,
-                    low.len()
+                    "    intents_pending: {}",
+                    progress.resolver.intents_pending.len()
                 );
-            } else {
-                println!("  {} L4·Reader  (尚未标注)", l4);
+            }
+            println!(
+                "  {} L3·Writing words: {}, beats: {}",
+                render_layer_status(&progress.executor.status),
+                progress.executor.words,
+                progress.executor.beats
+            );
+            if !progress.executor.beats_remaining.is_empty() {
+                println!(
+                    "    beats_remaining: {}",
+                    progress.executor.beats_remaining.len()
+                );
+            }
+            println!(
+                "  {} L4·Reader  avg: {}, low_beats: {}",
+                render_layer_status(&progress.evaluator.status),
+                progress
+                    .evaluator
+                    .avg_score
+                    .map(|score| format!("{score:.1}"))
+                    .unwrap_or_else(|| "—".into()),
+                progress.evaluator.low_beats.len()
+            );
+            if !progress.evaluator.required_tags_missing.is_empty() {
+                println!(
+                    "    required_tags_missing: {:?}",
+                    progress.evaluator.required_tags_missing
+                );
+            }
+            if !progress.blockers.is_empty() {
+                println!();
+                println!("{}", "  blockers:".yellow().bold());
+                for blocker in &progress.blockers {
+                    println!("    - {blocker}");
+                }
             }
         }
     }
@@ -270,7 +225,38 @@ fn show_plan_overview(
 
 pub fn submit(project: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let everlore = project.join(".everlore");
+    let phases_dir = everlore.join("phases");
+    let beats_dir = everlore.join("beats");
+    let annotations_dir = everlore.join("annotations");
+    let entities_dir = everlore.join("entities");
     let mut state = ProjectState::load(&everlore);
+    let phase_id = state
+        .active_phase()
+        .ok_or_else(|| "没有活跃的 phase".to_string())?
+        .to_string();
+    let progress = build_phase_progress(
+        &everlore,
+        &phases_dir,
+        &beats_dir,
+        &annotations_dir,
+        &entities_dir,
+        &phase_id,
+    )?;
+    if !progress.complete {
+        println!(
+            "{} {} 不能 submit",
+            "✗".red().bold(),
+            phase_id.cyan().bold()
+        );
+        println!(
+            "  definition: {}",
+            render_definition_status(&progress.definition_status)
+        );
+        for blocker in &progress.blockers {
+            println!("  - {blocker}");
+        }
+        return Err("phase 约束尚未满足，submit 已拒绝".into());
+    }
     let phase_id = state.submit()?;
     state.save(&everlore)?;
     println!(
@@ -327,4 +313,66 @@ pub fn reject(project: &Path, reason: &str) -> Result<(), Box<dyn std::error::Er
     );
     println!("  原因: {}", reason);
     Ok(())
+}
+
+fn build_phase_progress(
+    everlore: &Path,
+    phases_dir: &Path,
+    beats_dir: &Path,
+    annotations_dir: &Path,
+    entities_dir: &Path,
+    phase_id: &str,
+) -> Result<PhaseProgress, Box<dyn std::error::Error>> {
+    let phase = Phase::load(phases_dir, phase_id)?;
+    let beats = Beat::load_phase(beats_dir, phase_id);
+    let anns = annotation::load_annotations(annotations_dir, phase_id);
+    let snap = Snapshot::build(phase_id, entities_dir, everlore)?;
+    let avg_score = if anns.is_empty() {
+        None
+    } else {
+        Some(annotation::avg_score(&anns))
+    };
+    let low_beats = annotation::low_beats(&anns, 2)
+        .into_iter()
+        .map(|(beat, score, note)| LowBeat {
+            beat,
+            score,
+            reason: note,
+        })
+        .collect();
+    let present_tags = anns
+        .iter()
+        .flat_map(|ann| ann.tags.iter().cloned())
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    Ok(phase.evaluate_progress(
+        &snap,
+        &beats,
+        &ledger::EvaluatorInput {
+            annotations_count: anns.len() as u32,
+            avg_score,
+            low_beats,
+            present_tags,
+        },
+    ))
+}
+
+fn render_layer_status(status: &LayerStatus) -> colored::ColoredString {
+    match status {
+        LayerStatus::Ok => "✓".green(),
+        LayerStatus::Partial => "◎".yellow(),
+        LayerStatus::InProgress => "◎".yellow(),
+        LayerStatus::NeedsRevision => "✗".red(),
+        LayerStatus::NotChecked => "…".dimmed(),
+    }
+}
+
+fn render_definition_status(status: &DefinitionStatus) -> colored::ColoredString {
+    match status {
+        DefinitionStatus::Explicit => "explicit".green(),
+        DefinitionStatus::Derived => "derived".green(),
+        DefinitionStatus::Partial => "partial".yellow(),
+        DefinitionStatus::Missing => "missing".red(),
+    }
 }

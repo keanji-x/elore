@@ -295,10 +295,12 @@ mod tests {
     fn make_phase(id: &str, deps: Vec<&str>) -> Phase {
         Phase {
             id: id.into(),
+            phase_type: Default::default(),
             order: 0,
             depends_on: deps.into_iter().map(String::from).collect(),
             synopsis: None,
             guidance: None,
+            constraint_source: None,
             constraints: Default::default(),
         }
     }
