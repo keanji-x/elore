@@ -1,16 +1,15 @@
 mod add;
-mod diff;
-mod drama;
+mod build;
 mod generate;
-mod history;
 mod init;
+mod ingest;
 mod phase;
 mod plan;
 mod read_query;
-mod snapshot;
-mod status;
-mod validate;
-mod whatif;
+mod sync;
+// copilot tools
+mod lint;
+mod suggest;
 
 use crate::Cli;
 use read_query::Format;
@@ -30,11 +29,7 @@ pub async fn dispatch(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         // AI write API
         crate::Command::Add { action } => match action {
             crate::AddAction::Entity { json } => add::add_entity(&project, &json),
-            crate::AddAction::Drama { json } => add::add_drama(&project, &json),
             crate::AddAction::Secret { json } => add::add_secret(&project, &json),
-            crate::AddAction::Effect { chapter, dsl } => {
-                history::commit_effect(&project, &chapter, &dsl)
-            }
             // v3
             crate::AddAction::Phase { json } => add::add_phase(&project, &json),
             crate::AddAction::Beat { json } => add::add_beat(&project, &json),
@@ -44,58 +39,47 @@ pub async fn dispatch(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
 
         // AI read API
         crate::Command::Read { action } => match action {
-            crate::ReadAction::Snapshot { chapter, format } => {
-                read_query::read_snapshot(&project, &chapter, Format::from_str(&format))
+            crate::ReadAction::Snapshot { phase, format } => {
+                read_query::read_snapshot(&project, &phase, Format::from_str(&format))
             }
-            crate::ReadAction::Prompt { chapter, pov } => {
-                read_query::read_prompt(&project, &chapter, pov.as_deref())
-            }
-            crate::ReadAction::Drama { chapter, format } => {
-                read_query::read_drama(&project, &chapter, Format::from_str(&format))
-            }
-            crate::ReadAction::History { chapter, format } => {
-                read_query::read_history(&project, chapter.as_deref(), Format::from_str(&format))
+            crate::ReadAction::History { phase, format } => {
+                read_query::read_history(&project, phase.as_deref(), Format::from_str(&format))
             }
             // v3
-            crate::ReadAction::Phase { format } => {
-                read_query::read_phase(&project, Format::from_str(&format))
+            crate::ReadAction::Phase { phase, format } => {
+                read_query::read_phase(&project, phase.as_deref(), Format::from_str(&format))
             }
             crate::ReadAction::Beats { phase, format } => {
                 read_query::read_beats(&project, phase.as_deref(), Format::from_str(&format))
             }
+            crate::ReadAction::PreviousBeat { phase } => {
+                read_query::read_previous_beat(&project, phase.as_deref())
+            }
         },
 
-        // Human pipeline
-        crate::Command::Snapshot { chapter } => snapshot::run(&project, &chapter).await,
-        crate::Command::Validate { chapter } => validate::run(&project, &chapter).await,
-        crate::Command::Write {
-            chapter,
-            pov,
-            outline,
-        } => snapshot::write_prompt(&project, &chapter, pov.as_deref(), outline.as_deref()).await,
-        crate::Command::Run { chapter, pov } => {
-            snapshot::run_pipeline(&project, &chapter, pov.as_deref()).await
-        }
-        crate::Command::Plan { chapter } => plan::run(&project, chapter.as_deref()).await,
-        crate::Command::Diff {
-            from_chapter,
-            to_chapter,
-        } => diff::run(&project, &from_chapter, &to_chapter).await,
-        crate::Command::Whatif { chapter, effect } => {
-            whatif::run(&project, &chapter, &effect).await
-        }
-        crate::Command::History { action } => history::run(&project, action),
-        crate::Command::Drama { action } => drama::run(&project, action),
+        // Human workflow
+        crate::Command::Plan { phase } => plan::run(&project, phase.as_deref()).await,
 
         crate::Command::Gen { output, phases } => {
             generate::run(&project, output.as_deref(), &phases)
         }
 
         // v3: phase lifecycle
-        crate::Command::Status { format } => phase::status(&project, Format::from_str(&format)),
+        crate::Command::Status { phase, format } => {
+            phase::status(&project, phase.as_deref(), Format::from_str(&format))
+        }
         crate::Command::Checkout { phase_id } => phase::checkout(&project, &phase_id),
         crate::Command::Submit => phase::submit(&project),
         crate::Command::Approve => phase::approve(&project),
         crate::Command::Reject { reason } => phase::reject(&project, &reason),
+
+        // v4: file-based workflow
+        crate::Command::Build => build::run(&project),
+        crate::Command::Ingest => ingest::run(&project),
+        crate::Command::Sync => sync::run(&project),
+
+        // v5: AI copilot tools
+        crate::Command::LintDrafts => lint::run(&project),
+        crate::Command::Suggest => suggest::run(&project).await,
     }
 }

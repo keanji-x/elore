@@ -96,7 +96,26 @@ pub struct GoalEntity {
 // Loading
 // ══════════════════════════════════════════════════════════════════
 
-/// Load all YAML entity files that have goal trees.
+/// Extract GoalEntity views from Entity list (goals live in Character cards).
+pub fn extract_goal_entities(entities: &[crate::input::entity::Entity]) -> Vec<GoalEntity> {
+    let mut result = Vec::new();
+    for entity in entities {
+        if let crate::input::entity::Entity::Character(c) = entity {
+            if !c.goals.is_empty() {
+                result.push(GoalEntity {
+                    entity_type: "character".into(),
+                    id: c.id.clone(),
+                    name: c.name.clone(),
+                    goals: c.goals.clone(),
+                });
+            }
+        }
+    }
+    result.sort_by(|a, b| a.id.cmp(&b.id));
+    result
+}
+
+/// Load all YAML entity files that have goal trees (legacy path).
 pub fn load_goal_entities(dir: &Path) -> Result<Vec<GoalEntity>, LedgerError> {
     if !dir.exists() {
         return Ok(Vec::new());

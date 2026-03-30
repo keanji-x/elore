@@ -1,7 +1,6 @@
-//! `elore read snapshot/prompt/drama/history [--format json]`
+//! `elore read snapshot/history/phase/beats [--format json]`
 //!
 //! Unified read API for AI agents. All structured outputs support `--format json`.
-//! Prompt output is always plain text (markdown).
 
 use std::path::Path;
 
@@ -10,7 +9,6 @@ use serde_json::{Value, json};
 
 use ledger::effect::history::History;
 use ledger::state::snapshot::Snapshot;
-use resolver::drama;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Format {
@@ -50,34 +48,37 @@ pub fn read_snapshot(
             println!();
             println!("角色 ({}):", snap.characters().len());
             for c in snap.characters() {
-                let name = c.name.as_deref().unwrap_or(&c.id);
-                let loc = c.location.as_deref().unwrap_or("?");
-                println!("  {} ({}) @ {}", name.bold(), c.id, loc);
-                if !c.traits.is_empty() {
-                    println!("    特质: {}", c.traits.join(", "));
-                }
-                if !c.beliefs.is_empty() {
-                    println!("    信念: {}", c.beliefs.join("; "));
-                }
-                if !c.desires.is_empty() {
-                    println!("    欲望: {}", c.desires.join("; "));
-                }
-                if !c.inventory.is_empty() {
-                    println!("    物品: {}", c.inventory.join(", "));
-                }
-                if !c.relationships.is_empty() {
-                    let rels: Vec<_> = c
-                        .relationships
-                        .iter()
-                        .map(|r| format!("{}({})", r.rel, r.target))
-                        .collect();
-                    println!("    关系: {}", rels.join(", "));
+                let name = c.name().unwrap_or(c.id());
+                let ch = c.as_character();
+                let loc = ch.and_then(|ch| ch.location.as_deref()).unwrap_or("?");
+                println!("  {} ({}) @ {}", name.bold(), c.id(), loc);
+                if let Some(ch) = ch {
+                    if !ch.traits.is_empty() {
+                        println!("    特质: {}", ch.traits.join(", "));
+                    }
+                    if !ch.beliefs.is_empty() {
+                        println!("    信念: {}", ch.beliefs.join("; "));
+                    }
+                    if !ch.desires.is_empty() {
+                        println!("    欲望: {}", ch.desires.join("; "));
+                    }
+                    if !ch.inventory.is_empty() {
+                        println!("    物品: {}", ch.inventory.join(", "));
+                    }
+                    if !ch.relationships.is_empty() {
+                        let rels: Vec<_> = ch
+                            .relationships
+                            .iter()
+                            .map(|r| format!("{}({})", r.rel, r.target))
+                            .collect();
+                        println!("    关系: {}", rels.join(", "));
+                    }
                 }
             }
             println!("\n地点 ({}):", snap.locations().len());
             for l in snap.locations() {
-                let name = l.name.as_deref().unwrap_or(&l.id);
-                println!("  {} ({})", name.bold(), l.id);
+                let name = l.name().unwrap_or(l.id());
+                println!("  {} ({})", name.bold(), l.id());
             }
             if !snap.secrets.is_empty() {
                 println!("\n秘密 ({}):", snap.secrets.len());
@@ -91,65 +92,6 @@ pub fn read_snapshot(
                     println!("  {} [已知: {} | 读者: {}]", s.id.bold(), known, reader);
                 }
             }
-        }
-    }
-    Ok(())
-}
-
-// ══════════════════════════════════════════════════════════════════
-// prompt
-// ══════════════════════════════════════════════════════════════════
-
-pub fn read_prompt(
-    project: &Path,
-    chapter: &str,
-    pov: Option<&str>,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let entities_dir = project.join(".everlore/entities");
-    let everlore_dir = project.join(".everlore");
-    let snap = Snapshot::build(chapter, &entities_dir, &everlore_dir)?;
-    let mut drama_node = drama::load_drama(&everlore_dir, chapter)?;
-
-    if let Some(p) = pov {
-        drama_node.director_notes.pov = Some(p.to_string());
-    }
-
-    let history = History::load(&everlore_dir);
-    let prev_summary = History::previous_chapter_summary(&history, chapter);
-
-    let prompt = resolver::prompt::AuthorPrompt::build(
-        &snap,
-        &drama_node,
-        None,
-        prev_summary.as_deref(),
-        None,
-    );
-
-    // Always plain text — this goes directly to LLM
-    print!("{}", prompt.rendered);
-    Ok(())
-}
-
-// ══════════════════════════════════════════════════════════════════
-// drama
-// ══════════════════════════════════════════════════════════════════
-
-pub fn read_drama(
-    project: &Path,
-    chapter: &str,
-    format: Format,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let everlore_dir = project.join(".everlore");
-    let drama_node = drama::load_drama(&everlore_dir, chapter)?;
-
-    match format {
-        Format::Json => {
-            // Re-serialize the drama node to JSON
-            let j = serde_json::to_value(&drama_node)?;
-            println!("{}", serde_json::to_string_pretty(&j)?);
-        }
-        Format::Human => {
-            println!("{}", drama_node.render());
         }
     }
     Ok(())
@@ -218,48 +160,52 @@ fn snapshot_to_json(snap: &Snapshot) -> Value {
         .iter()
         .map(|e| {
             let mut obj = json!({
-                "type": e.entity_type,
-                "id": e.id,
+                "type": e.entity_type(),
+                "id": e.id(),
             });
-            if let Some(name) = &e.name {
+            if let Some(name) = e.name() {
                 obj["name"] = json!(name);
             }
-            if !e.traits.is_empty() {
-                obj["traits"] = json!(e.traits);
+            if let Some(c) = e.as_character() {
+                if !c.traits.is_empty() {
+                    obj["traits"] = json!(c.traits);
+                }
+                if !c.beliefs.is_empty() {
+                    obj["beliefs"] = json!(c.beliefs);
+                }
+                if !c.desires.is_empty() {
+                    obj["desires"] = json!(c.desires);
+                }
+                if !c.intentions.is_empty() {
+                    obj["intentions"] = json!(c.intentions);
+                }
+                if let Some(loc) = &c.location {
+                    obj["location"] = json!(loc);
+                }
+                if !c.relationships.is_empty() {
+                    obj["relationships"] = json!(
+                        c.relationships
+                            .iter()
+                            .map(|r| json!({
+                                "target": r.target, "rel": r.rel
+                            }))
+                            .collect::<Vec<_>>()
+                    );
+                }
+                if !c.inventory.is_empty() {
+                    obj["inventory"] = json!(c.inventory);
+                }
             }
-            if !e.beliefs.is_empty() {
-                obj["beliefs"] = json!(e.beliefs);
+            if let Some(l) = e.as_location() {
+                if !l.properties.is_empty() {
+                    obj["properties"] = json!(l.properties);
+                }
+                if !l.connections.is_empty() {
+                    obj["connections"] = json!(l.connections);
+                }
             }
-            if !e.desires.is_empty() {
-                obj["desires"] = json!(e.desires);
-            }
-            if !e.intentions.is_empty() {
-                obj["intentions"] = json!(e.intentions);
-            }
-            if let Some(loc) = &e.location {
-                obj["location"] = json!(loc);
-            }
-            if !e.relationships.is_empty() {
-                obj["relationships"] = json!(
-                    e.relationships
-                        .iter()
-                        .map(|r| json!({
-                            "target": r.target, "rel": r.rel
-                        }))
-                        .collect::<Vec<_>>()
-                );
-            }
-            if !e.inventory.is_empty() {
-                obj["inventory"] = json!(e.inventory);
-            }
-            if !e.properties.is_empty() {
-                obj["properties"] = json!(e.properties);
-            }
-            if !e.connections.is_empty() {
-                obj["connections"] = json!(e.connections);
-            }
-            if !e.tags.is_empty() {
-                obj["tags"] = json!(e.tags);
+            if !e.tags().is_empty() {
+                obj["tags"] = json!(e.tags());
             }
             obj
         })
@@ -290,14 +236,21 @@ fn snapshot_to_json(snap: &Snapshot) -> Value {
 // v3: read phase / beats
 // ══════════════════════════════════════════════════════════════════
 
-pub fn read_phase(project: &Path, format: Format) -> Result<(), Box<dyn std::error::Error>> {
+pub fn read_phase(
+    project: &Path,
+    phase_filter: Option<&str>,
+    format: Format,
+) -> Result<(), Box<dyn std::error::Error>> {
     let everlore = project.join(".everlore");
     let state = ledger::ProjectState::load(&everlore);
 
-    let phase_id = match state.active_phase() {
-        Some(id) => id.to_string(),
+    let phase_id = phase_filter
+        .map(str::to_string)
+        .or_else(|| state.active_phase().map(str::to_string));
+    let phase_id = match phase_id {
+        Some(id) => id,
         None => {
-            println!("{}", "(没有活跃的 phase)".dimmed());
+            println!("{}", "(没有活跃的 phase，可用 --phase <id> 指定)".dimmed());
             return Ok(());
         }
     };
@@ -307,7 +260,10 @@ pub fn read_phase(project: &Path, format: Format) -> Result<(), Box<dyn std::err
 
     match format {
         Format::Json => {
-            let j = serde_json::to_value(&phase)?;
+            let j = json!({
+                "phase": phase,
+                "definition_status": phase.definition_status(),
+            });
             println!("{}", serde_json::to_string_pretty(&j)?);
         }
         Format::Human => {
@@ -315,6 +271,7 @@ pub fn read_phase(project: &Path, format: Format) -> Result<(), Box<dyn std::err
             if let Some(syn) = &phase.synopsis {
                 println!("  {}", syn);
             }
+            println!("  definition: {:?}", phase.definition_status());
             println!();
 
             // Show constraints summary
@@ -362,6 +319,9 @@ pub fn read_phase(project: &Path, format: Format) -> Result<(), Box<dyn std::err
                 if !c.evaluator.required_tags.is_empty() {
                     println!("    required_tags: {:?}", c.evaluator.required_tags);
                 }
+            }
+            if !phase.has_any_constraints() {
+                println!("{}", "  (当前 phase 没有可检查的约束)".yellow());
             }
         }
     }
@@ -447,5 +407,113 @@ pub fn read_beats(
             );
         }
     }
+    Ok(())
+}
+
+// ══════════════════════════════════════════════════════════════════
+// v4: read previous beat
+// ══════════════════════════════════════════════════════════════════
+
+pub fn read_previous_beat(
+    project: &Path,
+    phase_filter: Option<&str>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let everlore = project.join(".everlore");
+    let state = ledger::ProjectState::load(&everlore);
+
+    let phase_id = phase_filter
+        .map(|s| s.to_string())
+        .or_else(|| state.active_phase().map(|s| s.to_string()));
+
+    let Some(phase_id) = phase_id else {
+        println!("{}", "(没有活跃的 phase，无法提取上一次上下文)".dimmed());
+        return Ok(());
+    };
+
+    let drafts_dir = project.join("drafts").join(&phase_id);
+    let mut highest_draft = None;
+    let mut highest_seq = -1;
+
+    if drafts_dir.exists() {
+        if let Ok(entries) = std::fs::read_dir(&drafts_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.extension().is_some_and(|e| e == "md") {
+                    if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+                        if let Ok(seq) = stem.parse::<i32>() {
+                            if seq > highest_seq {
+                                highest_seq = seq;
+                                highest_draft = Some(path);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let raw_text = if let Some(path) = highest_draft {
+        let content = std::fs::read_to_string(&path)?;
+        // Strip out frontmatter roughly
+        if content.starts_with("---\n") {
+            if let Some(end_idx) = content[4..].find("---\n") {
+                content[4 + end_idx + 4..].trim().to_string()
+            } else {
+                content.trim().to_string()
+            }
+        } else {
+            content.trim().to_string()
+        }
+    } else {
+        // Fallback to beats
+        let beats_dir = everlore.join("beats");
+        let beats = ledger::Beat::load_phase(&beats_dir, &phase_id);
+        if let Some(last) = beats.last() {
+            last.text.clone()
+        } else {
+            println!(
+                "{}",
+                "(这是本幕的第一个 Beat，请自由发挥，无需参考前一个片段)".yellow()
+            );
+            return Ok(());
+        }
+    };
+
+    if raw_text.is_empty() {
+        println!("{}", "(前一个片段没有文本内容)".yellow());
+        return Ok(());
+    }
+
+    let mut paragraphs: Vec<&str> = raw_text
+        .split("\n\n")
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    if paragraphs.is_empty() {
+        // Try fallback to just lines if they didn't use double newline
+        paragraphs = raw_text
+            .lines()
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .collect();
+    }
+
+    let take_count = std::cmp::min(2, paragraphs.len());
+    let last_paragraphs = &paragraphs[paragraphs.len() - take_count..];
+
+    println!(
+        "{}",
+        format!("═══ 前置段落上下文 (Phase: {phase_id}) ═══")
+            .cyan()
+            .bold()
+    );
+    println!();
+    for p in last_paragraphs {
+        println!("{}", p.dimmed());
+    }
+    println!();
+    println!("{}", "-> 请顺接上述段落的情绪和动作继续描写。".bold());
+
     Ok(())
 }

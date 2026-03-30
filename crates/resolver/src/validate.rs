@@ -110,11 +110,13 @@ fn check_intent(
                         // Characters aren't at the same location — check if location exists
                         let a_loc = snapshot
                             .entity(a)
-                            .and_then(|e| e.location.as_deref())
+                            .and_then(|e| e.as_character())
+                            .and_then(|c| c.location.as_deref())
                             .unwrap_or("?");
                         let b_loc = snapshot
                             .entity(b)
-                            .and_then(|e| e.location.as_deref())
+                            .and_then(|e| e.as_character())
+                            .and_then(|c| c.location.as_deref())
                             .unwrap_or("?");
                         return Some(UnmetIntent {
                             intent: intent.clone(),
@@ -240,15 +242,14 @@ impl Verdict {
 mod tests {
     use super::*;
     use crate::drama::{DirectorNotes, Pacing};
-    use ledger::input::entity::Entity;
+    use ledger::input::entity::{Character, Entity, Location};
     use ledger::input::secret::{DramaticFunction, Secret};
 
     fn make_snapshot() -> Snapshot {
         Snapshot::from_parts(
             "ch03",
             vec![
-                Entity {
-                    entity_type: "character".into(),
+                Entity::Character(Character {
                     id: "kian".into(),
                     name: None,
                     traits: vec![],
@@ -258,15 +259,11 @@ mod tests {
                     location: Some("oasis_gate".into()),
                     relationships: vec![],
                     inventory: vec![],
-                    alignment: None,
-                    rivals: vec![],
-                    members: vec![],
-                    properties: vec![],
-                    connections: vec![],
-                    tags: vec![],
-                },
-                Entity {
-                    entity_type: "character".into(),
+                    goals: vec![],
+            tags: vec![],
+                    description: None,
+                }),
+                Entity::Character(Character {
                     id: "nova".into(),
                     name: None,
                     traits: vec![],
@@ -276,31 +273,18 @@ mod tests {
                     location: Some("oasis_gate".into()),
                     relationships: vec![],
                     inventory: vec![],
-                    alignment: None,
-                    rivals: vec![],
-                    members: vec![],
-                    properties: vec![],
-                    connections: vec![],
-                    tags: vec![],
-                },
-                Entity {
-                    entity_type: "location".into(),
+                    goals: vec![],
+            tags: vec![],
+                    description: None,
+                }),
+                Entity::Location(Location {
                     id: "oasis_gate".into(),
                     name: None,
-                    traits: vec![],
-                    beliefs: vec![],
-                    desires: vec![],
-                    intentions: vec![],
-                    location: None,
-                    relationships: vec![],
-                    inventory: vec![],
-                    alignment: None,
-                    rivals: vec![],
-                    members: vec![],
                     properties: vec![],
                     connections: vec![],
                     tags: vec![],
-                },
+                    description: None,
+                }),
             ],
             vec![Secret {
                 id: "oasis_truth".into(),

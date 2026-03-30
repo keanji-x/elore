@@ -10,6 +10,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use crate::LedgerError;
+use crate::input::goal::Goal;
 
 // ══════════════════════════════════════════════════════════════════
 // Data model
@@ -22,20 +23,20 @@ pub struct Relationship {
     pub rel: String,
 }
 
-/// Unified entity structure — all fields optional except `type` + `id`.
-///
-/// This is the **only human-editable surface** of the entire system.
-/// Character JSON defines initial state, goals, beliefs, and environment view.
+/// Entity enum — each variant contains only its relevant fields.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Entity {
-    #[serde(rename = "type")]
-    pub entity_type: String,
-    pub id: String,
+#[serde(tag = "type", rename_all = "lowercase")]
+pub enum Entity {
+    Character(Character),
+    Location(Location),
+    Faction(Faction),
+}
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Character {
+    pub id: String,
     #[serde(default)]
     pub name: Option<String>,
-
-    // ── Character fields ─────────────────────────────────────────
     #[serde(default)]
     pub traits: Vec<String>,
     #[serde(default)]
@@ -50,24 +51,138 @@ pub struct Entity {
     pub relationships: Vec<Relationship>,
     #[serde(default)]
     pub inventory: Vec<String>,
+    #[serde(default)]
+    pub goals: Vec<Goal>,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
 
-    // ── Faction fields ───────────────────────────────────────────
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Location {
+    pub id: String,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub properties: Vec<String>,
+    #[serde(default)]
+    pub connections: Vec<String>,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Faction {
+    pub id: String,
+    #[serde(default)]
+    pub name: Option<String>,
     #[serde(default)]
     pub alignment: Option<String>,
     #[serde(default)]
     pub rivals: Vec<String>,
     #[serde(default)]
     pub members: Vec<String>,
-
-    // ── Location fields ──────────────────────────────────────────
-    #[serde(default)]
-    pub properties: Vec<String>,
-    #[serde(default)]
-    pub connections: Vec<String>,
-
-    // ── Tag filtering ────────────────────────────────────────────
     #[serde(default)]
     pub tags: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
+// ══════════════════════════════════════════════════════════════════
+// Common accessors
+// ══════════════════════════════════════════════════════════════════
+
+impl Entity {
+    pub fn id(&self) -> &str {
+        match self {
+            Entity::Character(c) => &c.id,
+            Entity::Location(l) => &l.id,
+            Entity::Faction(f) => &f.id,
+        }
+    }
+
+    pub fn name(&self) -> Option<&str> {
+        match self {
+            Entity::Character(c) => c.name.as_deref(),
+            Entity::Location(l) => l.name.as_deref(),
+            Entity::Faction(f) => f.name.as_deref(),
+        }
+    }
+
+    pub fn entity_type(&self) -> &str {
+        match self {
+            Entity::Character(_) => "character",
+            Entity::Location(_) => "location",
+            Entity::Faction(_) => "faction",
+        }
+    }
+
+    pub fn tags(&self) -> &[String] {
+        match self {
+            Entity::Character(c) => &c.tags,
+            Entity::Location(l) => &l.tags,
+            Entity::Faction(f) => &f.tags,
+        }
+    }
+
+    pub fn description(&self) -> Option<&str> {
+        match self {
+            Entity::Character(c) => c.description.as_deref(),
+            Entity::Location(l) => l.description.as_deref(),
+            Entity::Faction(f) => f.description.as_deref(),
+        }
+    }
+
+    pub fn set_description(&mut self, desc: Option<String>) {
+        match self {
+            Entity::Character(c) => c.description = desc,
+            Entity::Location(l) => l.description = desc,
+            Entity::Faction(f) => f.description = desc,
+        }
+    }
+
+    pub fn is_character(&self) -> bool {
+        matches!(self, Entity::Character(_))
+    }
+
+    pub fn is_location(&self) -> bool {
+        matches!(self, Entity::Location(_))
+    }
+
+    pub fn is_faction(&self) -> bool {
+        matches!(self, Entity::Faction(_))
+    }
+
+    pub fn as_character(&self) -> Option<&Character> {
+        match self {
+            Entity::Character(c) => Some(c),
+            _ => None,
+        }
+    }
+
+    pub fn as_character_mut(&mut self) -> Option<&mut Character> {
+        match self {
+            Entity::Character(c) => Some(c),
+            _ => None,
+        }
+    }
+
+    pub fn as_location(&self) -> Option<&Location> {
+        match self {
+            Entity::Location(l) => Some(l),
+            _ => None,
+        }
+    }
+
+    pub fn as_faction(&self) -> Option<&Faction> {
+        match self {
+            Entity::Faction(f) => Some(f),
+            _ => None,
+        }
+    }
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -77,80 +192,70 @@ pub struct Entity {
 impl Entity {
     /// Translate this entity into Datalog fact lines.
     pub fn to_datalog(&self) -> Vec<String> {
-        let id = &self.id;
+        let id = self.id();
         let mut facts = Vec::new();
 
-        facts.push(format!("entity({id}, {}).", self.entity_type));
+        facts.push(format!("entity({id}, {}).", self.entity_type()));
 
-        match self.entity_type.as_str() {
-            "character" => self.character_facts(id, &mut facts),
-            "location" => self.location_facts(id, &mut facts),
-            "faction" => self.faction_facts(id, &mut facts),
-            _ => {}
+        match self {
+            Entity::Character(c) => {
+                facts.push(format!("character({id})."));
+                for t in &c.traits {
+                    facts.push(format!("trait({id}, {}).", quote(t)));
+                }
+                for b in &c.beliefs {
+                    facts.push(format!("believes({id}, {}).", quote(b)));
+                }
+                for d in &c.desires {
+                    facts.push(format!("desires({id}, {}).", quote(d)));
+                }
+                for i in &c.intentions {
+                    facts.push(format!("intends({id}, {}).", quote(i)));
+                }
+                if let Some(loc) = &c.location {
+                    facts.push(format!("at({id}, {loc})."));
+                }
+                for r in &c.relationships {
+                    facts.push(format!("rel({id}, {}, {}).", r.target, quote(&r.rel)));
+                }
+                for item in &c.inventory {
+                    facts.push(format!("has({id}, {}).", quote(item)));
+                }
+                if let Some(name) = &c.name {
+                    facts.push(format!("name({id}, {}).", quote(name)));
+                }
+            }
+            Entity::Location(l) => {
+                facts.push(format!("location({id})."));
+                for p in &l.properties {
+                    facts.push(format!("property({id}, {}).", quote(p)));
+                }
+                for c in &l.connections {
+                    facts.push(format!("connected({id}, {c})."));
+                    facts.push(format!("connected({c}, {id})."));
+                }
+                if let Some(name) = &l.name {
+                    facts.push(format!("name({id}, {}).", quote(name)));
+                }
+            }
+            Entity::Faction(f) => {
+                facts.push(format!("faction({id})."));
+                if let Some(align) = &f.alignment {
+                    facts.push(format!("alignment({id}, {}).", quote(align)));
+                }
+                for r in &f.rivals {
+                    facts.push(format!("rival({id}, {r})."));
+                }
+                for m in &f.members {
+                    facts.push(format!("member({m}, {id})."));
+                }
+                if let Some(name) = &f.name {
+                    facts.push(format!("name({id}, {}).", quote(name)));
+                }
+            }
         }
 
         facts
-    }
-
-    fn character_facts(&self, id: &str, facts: &mut Vec<String>) {
-        facts.push(format!("character({id})."));
-
-        for t in &self.traits {
-            facts.push(format!("trait({id}, {}).", quote(t)));
-        }
-        for b in &self.beliefs {
-            facts.push(format!("believes({id}, {}).", quote(b)));
-        }
-        for d in &self.desires {
-            facts.push(format!("desires({id}, {}).", quote(d)));
-        }
-        for i in &self.intentions {
-            facts.push(format!("intends({id}, {}).", quote(i)));
-        }
-        if let Some(loc) = &self.location {
-            facts.push(format!("at({id}, {loc})."));
-        }
-        for r in &self.relationships {
-            facts.push(format!("rel({id}, {}, {}).", r.target, r.rel));
-        }
-        for item in &self.inventory {
-            facts.push(format!("has({id}, {}).", quote(item)));
-        }
-        if let Some(name) = &self.name {
-            facts.push(format!("name({id}, {}).", quote(name)));
-        }
-    }
-
-    fn location_facts(&self, id: &str, facts: &mut Vec<String>) {
-        facts.push(format!("location({id})."));
-
-        for p in &self.properties {
-            facts.push(format!("property({id}, {}).", quote(p)));
-        }
-        for c in &self.connections {
-            facts.push(format!("connected({id}, {c})."));
-            facts.push(format!("connected({c}, {id})."));
-        }
-        if let Some(name) = &self.name {
-            facts.push(format!("name({id}, {}).", quote(name)));
-        }
-    }
-
-    fn faction_facts(&self, id: &str, facts: &mut Vec<String>) {
-        facts.push(format!("faction({id})."));
-
-        if let Some(align) = &self.alignment {
-            facts.push(format!("alignment({id}, {}).", quote(align)));
-        }
-        for r in &self.rivals {
-            facts.push(format!("rival({id}, {r})."));
-        }
-        for m in &self.members {
-            facts.push(format!("member({m}, {id})."));
-        }
-        if let Some(name) = &self.name {
-            facts.push(format!("name({id}, {}).", quote(name)));
-        }
     }
 }
 
@@ -173,7 +278,7 @@ pub fn load_entities(dir: &Path) -> Result<Vec<Entity>, LedgerError> {
             entities.push(entity);
         }
     }
-    entities.sort_by(|a, b| a.id.cmp(&b.id));
+    entities.sort_by(|a, b| a.id().cmp(b.id()));
     Ok(entities)
 }
 
@@ -186,7 +291,7 @@ pub fn filter_by_tags(entities: Vec<Entity>, active_tags: &BTreeSet<String>) -> 
     }
     entities
         .into_iter()
-        .filter(|e| e.tags.is_empty() || e.tags.iter().any(|t| active_tags.contains(t)))
+        .filter(|e| e.tags().is_empty() || e.tags().iter().any(|t| active_tags.contains(t)))
         .collect()
 }
 
@@ -196,7 +301,8 @@ pub fn translate_to_datalog(entities: &[Entity]) -> String {
     for entity in entities {
         output.push_str(&format!(
             "% --- {} ({}) ---\n",
-            entity.id, entity.entity_type
+            entity.id(),
+            entity.entity_type()
         ));
         for fact in entity.to_datalog() {
             output.push_str(&fact);
@@ -251,8 +357,7 @@ mod tests {
     use super::*;
 
     fn make_character() -> Entity {
-        Entity {
-            entity_type: "character".into(),
+        Entity::Character(Character {
             id: "kian".into(),
             name: Some("基安".into()),
             traits: vec!["废土拾荒者".into(), "极其渴望水源".into()],
@@ -262,13 +367,10 @@ mod tests {
             location: Some("wasteland".into()),
             relationships: vec![],
             inventory: vec!["旧式防毒面具".into(), "电磁短刀".into()],
-            alignment: None,
-            rivals: vec![],
-            members: vec![],
-            properties: vec![],
-            connections: vec![],
+            goals: vec![],
             tags: vec!["ch01".into(), "ch02".into()],
-        }
+            description: None,
+        })
     }
 
     #[test]

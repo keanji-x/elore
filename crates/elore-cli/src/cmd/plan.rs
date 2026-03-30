@@ -2,14 +2,29 @@ use colored::Colorize;
 use std::path::Path;
 
 use ledger::input::goal;
+use ledger::state::phase_manager::ProjectState;
 use ledger::state::snapshot::Snapshot;
 
-pub async fn run(project: &Path, chapter: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn run(project: &Path, phase: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
     let entities_dir = project.join(".everlore/entities");
     let everlore_dir = project.join(".everlore");
+    let state = ProjectState::load(&everlore_dir);
 
-    let ch = chapter.unwrap_or("latest");
-    let snap = Snapshot::build(ch, &entities_dir, &everlore_dir)?;
+    let phase_id = if let Some(phase_id) = phase {
+        println!("{}", format!("使用 phase 视角: {phase_id}").cyan().bold());
+        phase_id.to_string()
+    } else if let Some(active_phase) = state.active_phase() {
+        println!(
+            "{}",
+            format!("使用当前 active phase: {active_phase}")
+                .cyan()
+                .bold()
+        );
+        active_phase.to_string()
+    } else {
+        return Err("没有活跃的 phase，可用 --phase <id> 指定".into());
+    };
+    let snap = Snapshot::build(&phase_id, &entities_dir, &everlore_dir)?;
 
     println!("{}", "═══ 态势面板 ═══".cyan().bold());
 
@@ -58,6 +73,44 @@ pub async fn run(project: &Path, chapter: Option<&str>) -> Result<(), Box<dyn st
 
     if suspense.is_empty() && conflicts.is_empty() && snap.secrets.is_empty() {
         println!("\n{}", "(无悬念、冲突或秘密)".dimmed());
+    }
+
+    // Reasoning engine
+    let reasoning = ledger::run_reasoning(&snap).await?;
+    if reasoning.total_facts > 0 {
+        println!("\n{}", format!("推理引擎 ({} 推导事实):", reasoning.total_facts).blue().bold());
+        if let Some(rows) = reasoning.get("can_meet") {
+            if !rows.is_empty() {
+                let pairs: Vec<String> = rows
+                    .iter()
+                    .filter(|r| r[0] < r[1])
+                    .map(|r| format!("{}↔{}", r[0], r[1]))
+                    .collect();
+                if !pairs.is_empty() {
+                    println!("  📍 相遇: {}", pairs.join(", "));
+                }
+            }
+        }
+        if let Some(rows) = reasoning.get("betrayal_opportunity") {
+            if !rows.is_empty() {
+                for row in rows {
+                    println!("  🗡 背叛: {} → {} ({})", row[0], row[1], row[2]);
+                }
+            }
+        }
+        if let Some(rows) = reasoning.get("dramatic_irony") {
+            let count = rows.len();
+            if count > 0 {
+                println!("  🎭 戏剧反讽: {} 条", count);
+            }
+        }
+        if let Some(rows) = reasoning.get("alliance_opportunity") {
+            if !rows.is_empty() {
+                for row in rows {
+                    println!("  🤝 联盟: {} & {} ({})", row[0], row[1], row[2]);
+                }
+            }
+        }
     }
 
     Ok(())

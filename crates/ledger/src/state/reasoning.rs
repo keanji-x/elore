@@ -16,6 +16,9 @@ use std::collections::HashMap;
 use nemo_physical::datavalues::DataValue;
 
 use crate::LedgerError;
+use crate::input::{entity, goal, secret};
+use crate::state::graph::WorldGraph;
+use crate::state::snapshot::Snapshot;
 
 // ══════════════════════════════════════════════════════════════════
 // Result type
@@ -214,6 +217,103 @@ pub fn default_exports() -> Vec<&'static str> {
         "unblocked",
         "dramatic_irony",
     ]
+}
+
+/// Extended exports including narrative possibility predicates.
+pub fn narrative_exports() -> Vec<&'static str> {
+    let mut exports = default_exports();
+    exports.extend_from_slice(&[
+        "betrayal_opportunity",
+        "possible_reveal",
+        "info_cascade",
+        "alliance_opportunity",
+        "goal_conflict_encounter",
+        "orphaned_secret",
+    ]);
+    exports
+}
+
+/// Narrative possibility rules — derive actionable story events from world state.
+pub fn narrative_rules() -> &'static str {
+    r#"% === Narrative Possibility Rules ===
+
+% 背叛时机：知道针对某人的秘密 + 能见面
+betrayal_opportunity(?Plotter, ?Victim, ?Secret) :-
+  secret_known_by(?Secret, ?Plotter),
+  ~secret_known_by(?Secret, ?Victim),
+  can_meet(?Plotter, ?Victim),
+  character(?Victim).
+
+% 揭秘时机：知情者与不知情者在同一地点
+possible_reveal(?Secret, ?Informed, ?Uninformed) :-
+  secret_known_by(?Secret, ?Informed),
+  ~secret_known_by(?Secret, ?Uninformed),
+  can_meet(?Informed, ?Uninformed),
+  character(?Uninformed).
+
+% 信息级联：知情者能传给谁
+info_cascade(?Secret, ?Bridge, ?Target) :-
+  secret_known_by(?Secret, ?Bridge),
+  can_meet(?Bridge, ?Target),
+  ~secret_known_by(?Secret, ?Target),
+  character(?Target).
+
+% 联盟机会：共同欲望
+alliance_opportunity(?A, ?B, ?Want) :-
+  desires(?A, ?Want), desires(?B, ?Want),
+  character(?A), character(?B), ?A != ?B.
+
+% 目标冲突相遇：冲突目标 + 能见面
+goal_conflict_encounter(?OA, ?GA, ?OB, ?GB) :-
+  active_conflict(?OA, ?GA, ?OB, ?GB),
+  can_meet(?OA, ?OB).
+
+% 孤立秘密：读者知道但没有角色知道 → 无法在故事中揭示
+has_knower(?S) :- secret_known_by(?S, ?C).
+orphaned_secret(?S) :-
+  secret(?S),
+  secret_revealed_to_reader(?S),
+  ~has_knower(?S).
+"#
+}
+
+// ══════════════════════════════════════════════════════════════════
+// Orchestration — the missing pipeline
+// ══════════════════════════════════════════════════════════════════
+
+/// Run full narrative reasoning on a snapshot.
+///
+/// Assembles entity/graph/goal/secret facts + all rules, then
+/// executes the Nemo Datalog engine and returns derived predicates.
+pub async fn run_reasoning(snapshot: &Snapshot) -> Result<ReasoningResult, LedgerError> {
+    let entity_facts = entity::translate_to_datalog(&snapshot.entities);
+    let graph = WorldGraph::build(&snapshot.entities);
+    let graph_facts = graph.to_datalog();
+    let goal_facts = goal::goals_to_datalog(&snapshot.goal_entities);
+    let secret_facts = secret::secrets_to_datalog(&snapshot.secrets);
+
+    let all_rules = format!(
+        "{}\n{}\n{}",
+        entity::builtin_rules(),
+        goal::goal_rules(),
+        secret::secret_rules(),
+    );
+    let combined_rules = format!("{all_rules}\n{}", narrative_rules());
+
+    let exports = narrative_exports();
+    let export_refs: Vec<&str> = exports.iter().copied().collect();
+
+    let program = assemble_program(
+        &entity_facts,
+        &graph_facts,
+        &goal_facts,
+        &secret_facts,
+        &combined_rules,
+        "", // goal rules already included above
+        "", // secret rules already included above
+        &export_refs,
+    );
+    reason(&program).await
 }
 
 // ══════════════════════════════════════════════════════════════════

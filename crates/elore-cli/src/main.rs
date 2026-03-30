@@ -48,58 +48,11 @@ pub enum Command {
         action: ReadAction,
     },
 
-    // ── Human pipeline ───────────────────────────────────────────
-    /// 构建世界快照
-    Snapshot { chapter: String },
-
-    /// 校验 drama intent
-    Validate { chapter: String },
-
-    /// 生成 Author prompt
-    Write {
-        chapter: String,
-        #[arg(long)]
-        pov: Option<String>,
-        #[arg(long)]
-        outline: Option<PathBuf>,
-    },
-
-    /// 全管线: snapshot → validate → write
-    Run {
-        chapter: String,
-        #[arg(long)]
-        pov: Option<String>,
-    },
-
-    /// 态势面板
+    // ── Human workflow ───────────────────────────────────────────
+    /// 态势面板。优先使用 phase / 当前 active phase
     Plan {
         #[arg(long)]
-        chapter: Option<String>,
-    },
-
-    /// 章节间 diff
-    Diff {
-        from_chapter: String,
-        to_chapter: String,
-    },
-
-    /// What-If 分析
-    Whatif {
-        chapter: String,
-        #[arg(long)]
-        effect: String,
-    },
-
-    /// 事件日志管理
-    History {
-        #[command(subcommand)]
-        action: HistoryAction,
-    },
-
-    /// Drama Node 管理
-    Drama {
-        #[command(subcommand)]
-        action: DramaAction,
+        phase: Option<String>,
     },
 
     /// 将所有 Beats 编译成可读的 Markdown 文档
@@ -115,6 +68,8 @@ pub enum Command {
 
     /// 项目概览 (v3: 显示四层约束进度)
     Status {
+        #[arg(long)]
+        phase: Option<String>,
         #[arg(long, default_value = "human")]
         format: String,
     },
@@ -131,6 +86,23 @@ pub enum Command {
 
     /// 拒绝当前 phase (退回 active)
     Reject { reason: String },
+
+    // ── v4: File-based workflow ───────────────────────────────────
+    /// 编译 cards/ → .everlore/ (entity cache, history, snapshots)
+    Build,
+
+    /// 从 drafts/ 编译 Markdown 为正式 beats
+    Ingest,
+
+    /// 从文件系统重建 history.jsonl 和 state.json
+    Sync,
+
+    // ── v5: AI Copilot Workflow ───────────────────────────────────
+    /// 对 drafts 里的 markdown 语法与前置 YAML 进行静态分析
+    LintDrafts,
+
+    /// 启发式断言分析，为 AI 提供下一步剧情动作和撰写建议
+    Suggest,
 }
 
 // ── Add subcommands ──────────────────────────────────────────────
@@ -142,21 +114,10 @@ pub enum AddAction {
         /// JSON 字符串, id 为必填
         json: String,
     },
-    /// 注入/更新 drama node (chapter 为必填)
-    Drama {
-        /// JSON 字符串, chapter 为必填
-        json: String,
-    },
     /// 注入/更新秘密 (id 和 content 为必填)
     Secret {
         /// JSON 字符串
         json: String,
-    },
-    /// 提交单个 effect (等同于 history add)
-    Effect {
-        chapter: String,
-        /// Effect DSL, 例如: move(kian, oasis_gate)
-        dsl: String,
     },
 
     // ── v3 ──
@@ -186,34 +147,24 @@ pub enum AddAction {
 
 #[derive(Subcommand)]
 pub enum ReadAction {
-    /// 世界快照 (默认 human, --format json 机器可读)
+    /// 世界快照。参数语义为 phase_id，输出的是该 phase 截止当前的世界状态
     Snapshot {
-        chapter: String,
+        phase: String,
         #[arg(long, default_value = "human")]
         format: String,
     },
-    /// 编译好的 Author prompt (纯文本, 直连 LLM)
-    Prompt {
-        chapter: String,
-        #[arg(long)]
-        pov: Option<String>,
-    },
-    /// Drama node
-    Drama {
-        chapter: String,
-        #[arg(long, default_value = "human")]
-        format: String,
-    },
-    /// 事件历史
+    /// 事件历史。参数语义为 phase_id
     History {
         #[arg(long)]
-        chapter: Option<String>,
+        phase: Option<String>,
         #[arg(long, default_value = "human")]
         format: String,
     },
     // ── v3 ──
-    /// 当前 Phase 定义和约束
+    /// Phase 定义和约束。省略 --phase 时读取当前 active phase
     Phase {
+        #[arg(long)]
+        phase: Option<String>,
         #[arg(long, default_value = "human")]
         format: String,
     },
@@ -224,28 +175,12 @@ pub enum ReadAction {
         #[arg(long, default_value = "human")]
         format: String,
     },
-}
-
-// ── Existing subcommands ─────────────────────────────────────────
-
-#[derive(Subcommand)]
-pub enum HistoryAction {
-    List {
+    // ── v4 ──
+    /// 获取前一个 Beat 的结尾上下文片段，保持剧情连续性
+    PreviousBeat {
         #[arg(long)]
-        chapter: Option<String>,
+        phase: Option<String>,
     },
-    Add {
-        chapter: String,
-        effect: String,
-    },
-    Rollback {
-        chapter: String,
-    },
-}
-
-#[derive(Subcommand)]
-pub enum DramaAction {
-    Show { chapter: String },
 }
 
 #[tokio::main]

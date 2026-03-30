@@ -102,59 +102,64 @@ impl Op {
         let Some(target_id) = self.entity_id() else {
             return false;
         };
-        if entity.id != target_id {
+        if entity.id() != target_id {
             return false;
         }
 
+        let Some(c) = entity.as_character_mut() else {
+            // Only character entities support these mutations
+            return false;
+        };
+
         match self {
             Self::AddTrait { value, .. } => {
-                if !entity.traits.contains(value) {
-                    entity.traits.push(value.clone());
+                if !c.traits.contains(value) {
+                    c.traits.push(value.clone());
                 }
             }
             Self::RemoveTrait { value, .. } => {
-                entity.traits.retain(|t| t != value);
+                c.traits.retain(|t| t != value);
             }
             Self::AddItem { item, .. } => {
-                if !entity.inventory.contains(item) {
-                    entity.inventory.push(item.clone());
+                if !c.inventory.contains(item) {
+                    c.inventory.push(item.clone());
                 }
             }
             Self::RemoveItem { item, .. } => {
-                entity.inventory.retain(|i| i != item);
+                c.inventory.retain(|i| i != item);
             }
             Self::Move { location, .. } => {
-                entity.location = Some(location.clone());
+                c.location = Some(location.clone());
             }
             Self::AddRel { target, rel, .. } => {
-                if !entity
+                if !c
                     .relationships
                     .iter()
                     .any(|r| r.target == *target && r.rel == *rel)
                 {
-                    entity.relationships.push(Relationship {
+                    c.relationships.push(Relationship {
                         target: target.clone(),
                         rel: rel.clone(),
                     });
                 }
             }
             Self::RemoveRel { target, .. } => {
-                entity.relationships.retain(|r| r.target != *target);
+                c.relationships.retain(|r| r.target != *target);
             }
             Self::SetBelief { old, new, .. } => {
-                if let Some(b) = entity.beliefs.iter_mut().find(|b| **b == *old) {
+                if let Some(b) = c.beliefs.iter_mut().find(|b| **b == *old) {
                     *b = new.clone();
                 } else {
-                    entity.beliefs.push(new.clone());
+                    c.beliefs.push(new.clone());
                 }
             }
             Self::AddDesire { value, .. } => {
-                if !entity.desires.contains(value) {
-                    entity.desires.push(value.clone());
+                if !c.desires.contains(value) {
+                    c.desires.push(value.clone());
                 }
             }
             Self::RemoveDesire { value, .. } => {
-                entity.desires.retain(|d| d != value);
+                c.desires.retain(|d| d != value);
             }
             // Non-entity ops
             _ => return false,
@@ -258,6 +263,45 @@ impl Op {
                 want,
                 ..
             } => format!("{owner}: 新目标 {goal_id} — \"{want}\""),
+        }
+    }
+
+    /// Extract all entity IDs targeted by this effect to validate if they exist.
+    pub fn extract_entities(&self) -> Vec<&str> {
+        let mut ids = Vec::new();
+        match self {
+            Self::AddTrait { entity, .. }
+            | Self::RemoveTrait { entity, .. }
+            | Self::AddItem { entity, .. }
+            | Self::RemoveItem { entity, .. }
+            | Self::Move { entity, .. }
+            | Self::SetBelief { entity, .. }
+            | Self::AddDesire { entity, .. }
+            | Self::RemoveDesire { entity, .. } => {
+                ids.push(entity.as_str());
+            }
+            Self::AddRel { entity, target, .. } | Self::RemoveRel { entity, target } => {
+                ids.push(entity.as_str());
+                ids.push(target.as_str());
+            }
+            Self::Reveal { to, .. } => {
+                ids.push(to.as_str());
+            }
+            Self::RevealToReader { .. } => {}
+            Self::ResolveGoal { owner, .. }
+            | Self::FailGoal { owner, .. }
+            | Self::EmergeGoal { owner, .. } => {
+                ids.push(owner.as_str());
+            }
+        }
+        ids
+    }
+
+    /// Extract all secret IDs targeted by this effect to validate if they exist.
+    pub fn extract_secrets(&self) -> Vec<&str> {
+        match self {
+            Self::Reveal { secret, .. } | Self::RevealToReader { secret } => vec![secret.as_str()],
+            _ => vec![],
         }
     }
 }
@@ -487,8 +531,8 @@ mod tests {
 
     #[test]
     fn apply_to_entity() {
-        let mut entity = Entity {
-            entity_type: "character".into(),
+        use crate::input::entity::Character;
+        let mut entity = Entity::Character(Character {
             id: "kian".into(),
             name: None,
             traits: vec![],
@@ -498,26 +542,23 @@ mod tests {
             location: None,
             relationships: vec![],
             inventory: vec!["刀".into()],
-            alignment: None,
-            rivals: vec![],
-            members: vec![],
-            properties: vec![],
-            connections: vec![],
+            goals: vec![],
             tags: vec![],
-        };
+            description: None,
+        });
 
         let op = Op::RemoveItem {
             entity: "kian".into(),
             item: "刀".into(),
         };
         assert!(op.apply_to_entity(&mut entity));
-        assert!(entity.inventory.is_empty());
+        assert!(entity.as_character().unwrap().inventory.is_empty());
     }
 
     #[test]
     fn apply_to_wrong_entity() {
-        let mut entity = Entity {
-            entity_type: "character".into(),
+        use crate::input::entity::Character;
+        let mut entity = Entity::Character(Character {
             id: "nova".into(),
             name: None,
             traits: vec![],
@@ -527,13 +568,10 @@ mod tests {
             location: None,
             relationships: vec![],
             inventory: vec![],
-            alignment: None,
-            rivals: vec![],
-            members: vec![],
-            properties: vec![],
-            connections: vec![],
+            goals: vec![],
             tags: vec![],
-        };
+            description: None,
+        });
 
         let op = Op::AddTrait {
             entity: "kian".into(),

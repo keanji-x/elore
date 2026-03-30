@@ -31,7 +31,7 @@ fn evaluate_assertion(snapshot: &Snapshot, assertion: &StateAssertion) -> bool {
     if let Some(rest) = query.strip_prefix("entity_alive(")
         && let Some(id) = rest.strip_suffix(')')
     {
-        let exists = snapshot.entities.iter().any(|e| e.id == id);
+        let exists = snapshot.entities.iter().any(|e| e.id() == id);
         return match expected.as_str() {
             "true" => exists,
             "false" => !exists,
@@ -64,21 +64,21 @@ fn evaluate_assertion(snapshot: &Snapshot, assertion: &StateAssertion) -> bool {
         let entity_id = &query[..dot_pos];
         let field = &query[dot_pos + 1..];
 
-        if let Some(entity) = snapshot.entities.iter().find(|e| e.id == entity_id) {
+        if let Some(entity) = snapshot.entities.iter().find(|e| e.id() == entity_id) {
+            let c = entity.as_character();
             return match field {
-                "location" => entity
-                    .location
-                    .as_deref()
+                "location" => c
+                    .and_then(|c| c.location.as_deref())
                     .is_some_and(|loc| loc == expected),
-                "type" => entity.entity_type == *expected,
-                "name" => entity.name.as_deref().is_some_and(|n| n == expected),
+                "type" => entity.entity_type() == *expected,
+                "name" => entity.name().is_some_and(|n| n == expected),
                 // Check if entity has a trait
                 f if f.starts_with("has_trait(") => {
                     if let Some(t) = f
                         .strip_prefix("has_trait(")
                         .and_then(|r| r.strip_suffix(')'))
                     {
-                        let has = entity.traits.contains(&t.to_string());
+                        let has = c.is_some_and(|c| c.traits.contains(&t.to_string()));
                         match expected.as_str() {
                             "true" => has,
                             "false" => !has,
@@ -91,10 +91,11 @@ fn evaluate_assertion(snapshot: &Snapshot, assertion: &StateAssertion) -> bool {
                 // Check if entity has a specific relationship
                 f if f.starts_with("rel(") => {
                     if let Some(t) = f.strip_prefix("rel(").and_then(|r| r.strip_suffix(')')) {
-                        entity
-                            .relationships
-                            .iter()
-                            .any(|r| r.target == t || r.rel == t)
+                        c.is_some_and(|c| {
+                            c.relationships
+                                .iter()
+                                .any(|r| r.target == t || r.rel == t)
+                        })
                     } else {
                         false
                     }
@@ -105,7 +106,7 @@ fn evaluate_assertion(snapshot: &Snapshot, assertion: &StateAssertion) -> bool {
                         .strip_prefix("has_item(")
                         .and_then(|r| r.strip_suffix(')'))
                     {
-                        let has = entity.inventory.contains(&item.to_string());
+                        let has = c.is_some_and(|c| c.inventory.contains(&item.to_string()));
                         match expected.as_str() {
                             "true" => has,
                             "false" => !has,
@@ -125,18 +126,85 @@ fn evaluate_assertion(snapshot: &Snapshot, assertion: &StateAssertion) -> bool {
     false // Unknown query pattern
 }
 
+/// Check worldbuilding constraints against a snapshot.
+/// Returns (passed, failed_reasons).
+pub fn check_worldbuilding(
+    snapshot: &Snapshot,
+    counts: &Option<crate::state::phase::WorldbuildingCounts>,
+    min_rel_density: Option<f32>,
+) -> (bool, Vec<String>) {
+    let mut failures = Vec::new();
+
+    if let Some(counts) = counts {
+        let n_chars = snapshot
+            .entities
+            .iter()
+            .filter(|e| e.is_character())
+            .count() as u32;
+        let n_locs = snapshot
+            .entities
+            .iter()
+            .filter(|e| e.is_location())
+            .count() as u32;
+        let n_factions = snapshot
+            .entities
+            .iter()
+            .filter(|e| e.is_faction())
+            .count() as u32;
+        let n_secrets = snapshot.secrets.len() as u32;
+
+        if let Some(min) = counts.characters {
+            if n_chars < min {
+                failures.push(format!("characters {n_chars}/{min}"));
+            }
+        }
+        if let Some(min) = counts.locations {
+            if n_locs < min {
+                failures.push(format!("locations {n_locs}/{min}"));
+            }
+        }
+        if let Some(min) = counts.factions {
+            if n_factions < min {
+                failures.push(format!("factions {n_factions}/{min}"));
+            }
+        }
+        if let Some(min) = counts.secrets {
+            if n_secrets < min {
+                failures.push(format!("secrets {n_secrets}/{min}"));
+            }
+        }
+    }
+
+    if let Some(min_density) = min_rel_density {
+        let characters: Vec<_> = snapshot
+            .entities
+            .iter()
+            .filter_map(|e| e.as_character())
+            .collect();
+        let n = characters.len();
+        if n > 0 {
+            let total_rels: usize = characters.iter().map(|c| c.relationships.len()).sum();
+            let density = total_rels as f32 / n as f32;
+            if density < min_density {
+                failures.push(format!("rel_density {density:.1}/{min_density}"));
+            }
+        }
+    }
+
+    (failures.is_empty(), failures)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::input::entity::{Entity, Relationship};
+    use crate::input::entity::{Character, Entity, Relationship};
     use crate::input::secret::Secret;
 
     fn test_snapshot() -> Snapshot {
         Snapshot {
             chapter: "test".into(),
             entities: vec![
-                Entity {
-                    entity_type: "character".into(),
+                Entity::Character(Character {
                     id: "kian".into(),
                     name: Some("基安".into()),
                     location: Some("oasis_gate".into()),
@@ -149,15 +217,11 @@ mod tests {
                     beliefs: vec![],
                     desires: vec![],
                     intentions: vec![],
-                    alignment: None,
-                    rivals: vec![],
-                    members: vec![],
-                    properties: vec![],
-                    connections: vec![],
-                    tags: vec![],
-                },
-                Entity {
-                    entity_type: "character".into(),
+                    goals: vec![],
+            tags: vec![],
+                    description: None,
+                }),
+                Entity::Character(Character {
                     id: "nova".into(),
                     name: Some("诺娃".into()),
                     location: Some("oasis_gate".into()),
@@ -167,13 +231,10 @@ mod tests {
                     intentions: vec![],
                     inventory: vec![],
                     relationships: vec![],
-                    alignment: None,
-                    rivals: vec![],
-                    members: vec![],
-                    properties: vec![],
-                    connections: vec![],
-                    tags: vec![],
-                },
+                    goals: vec![],
+            tags: vec![],
+                    description: None,
+                }),
             ],
             secrets: vec![Secret {
                 id: "oasis_truth".into(),
@@ -272,6 +333,48 @@ mod tests {
             expected: "true".into(),
         };
         let (ok, _) = check_assertions(&snap, &[a]);
+        assert!(ok);
+    }
+
+    #[test]
+    fn worldbuilding_counts_pass() {
+        let snap = test_snapshot(); // has 2 characters
+        let counts = crate::state::phase::WorldbuildingCounts {
+            characters: Some(2),
+            locations: None,
+            factions: None,
+            secrets: Some(1),
+        };
+        let (ok, _) = check_worldbuilding(&snap, &Some(counts), None);
+        assert!(ok);
+    }
+
+    #[test]
+    fn worldbuilding_counts_fail() {
+        let snap = test_snapshot(); // has 2 characters
+        let counts = crate::state::phase::WorldbuildingCounts {
+            characters: Some(5),
+            locations: None,
+            factions: None,
+            secrets: None,
+        };
+        let (ok, failures) = check_worldbuilding(&snap, &Some(counts), None);
+        assert!(!ok);
+        assert!(failures[0].contains("characters 2/5"));
+    }
+
+    #[test]
+    fn worldbuilding_rel_density() {
+        let snap = test_snapshot(); // kian has 1 rel, nova has 0 → avg 0.5
+        let (ok, failures) = check_worldbuilding(&snap, &None, Some(1.0));
+        assert!(!ok);
+        assert!(failures[0].contains("rel_density"));
+    }
+
+    #[test]
+    fn worldbuilding_rel_density_pass() {
+        let snap = test_snapshot(); // avg 0.5
+        let (ok, _) = check_worldbuilding(&snap, &None, Some(0.5));
         assert!(ok);
     }
 }

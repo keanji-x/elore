@@ -63,100 +63,109 @@ impl WorldGraph {
 
         // Register all nodes
         for entity in entities {
+            let id = entity.id().to_string();
             nodes.insert(
-                entity.id.clone(),
+                id.clone(),
                 GraphNode {
-                    id: entity.id.clone(),
-                    entity_type: entity.entity_type.clone(),
-                    name: entity.name.clone(),
+                    id: id.clone(),
+                    entity_type: entity.entity_type().to_string(),
+                    name: entity.name().map(|s| s.to_string()),
                 },
             );
             by_type
-                .entry(entity.entity_type.clone())
+                .entry(entity.entity_type().to_string())
                 .or_default()
-                .push(entity.id.clone());
+                .push(id);
         }
 
         // Build edges
         for entity in entities {
-            // Character at location
-            if let Some(loc) = &entity.location {
-                let edge = GraphEdge {
-                    from: entity.id.clone(),
-                    to: loc.clone(),
-                    kind: EdgeKind::At,
-                };
-                neighbors
-                    .entry(entity.id.clone())
-                    .or_default()
-                    .push((loc.clone(), EdgeKind::At));
-                neighbors
-                    .entry(loc.clone())
-                    .or_default()
-                    .push((entity.id.clone(), EdgeKind::At));
-                by_location
-                    .entry(loc.clone())
-                    .or_default()
-                    .push(entity.id.clone());
-                edges.push(edge);
-            }
+            let eid = entity.id().to_string();
 
-            // Character relationships
-            for r in &entity.relationships {
-                let kind = EdgeKind::Rel(r.rel.clone());
-                edges.push(GraphEdge {
-                    from: entity.id.clone(),
-                    to: r.target.clone(),
-                    kind: kind.clone(),
-                });
-                neighbors
-                    .entry(entity.id.clone())
-                    .or_default()
-                    .push((r.target.clone(), kind));
-            }
+            match entity {
+                Entity::Character(c) => {
+                    // Character at location
+                    if let Some(loc) = &c.location {
+                        let edge = GraphEdge {
+                            from: eid.clone(),
+                            to: loc.clone(),
+                            kind: EdgeKind::At,
+                        };
+                        neighbors
+                            .entry(eid.clone())
+                            .or_default()
+                            .push((loc.clone(), EdgeKind::At));
+                        neighbors
+                            .entry(loc.clone())
+                            .or_default()
+                            .push((eid.clone(), EdgeKind::At));
+                        by_location
+                            .entry(loc.clone())
+                            .or_default()
+                            .push(eid.clone());
+                        edges.push(edge);
+                    }
 
-            // Location connections
-            for conn in &entity.connections {
-                let edge = GraphEdge {
-                    from: entity.id.clone(),
-                    to: conn.clone(),
-                    kind: EdgeKind::Connected,
-                };
-                neighbors
-                    .entry(entity.id.clone())
-                    .or_default()
-                    .push((conn.clone(), EdgeKind::Connected));
-                edges.push(edge);
-            }
+                    // Character relationships
+                    for r in &c.relationships {
+                        let kind = EdgeKind::Rel(r.rel.clone());
+                        edges.push(GraphEdge {
+                            from: eid.clone(),
+                            to: r.target.clone(),
+                            kind: kind.clone(),
+                        });
+                        neighbors
+                            .entry(eid.clone())
+                            .or_default()
+                            .push((r.target.clone(), kind));
+                    }
+                }
+                Entity::Location(l) => {
+                    // Location connections
+                    for conn in &l.connections {
+                        let edge = GraphEdge {
+                            from: eid.clone(),
+                            to: conn.clone(),
+                            kind: EdgeKind::Connected,
+                        };
+                        neighbors
+                            .entry(eid.clone())
+                            .or_default()
+                            .push((conn.clone(), EdgeKind::Connected));
+                        edges.push(edge);
+                    }
+                }
+                Entity::Faction(f) => {
+                    // Faction membership
+                    for member in &f.members {
+                        edges.push(GraphEdge {
+                            from: member.clone(),
+                            to: eid.clone(),
+                            kind: EdgeKind::Member,
+                        });
+                        neighbors
+                            .entry(member.clone())
+                            .or_default()
+                            .push((eid.clone(), EdgeKind::Member));
+                        neighbors
+                            .entry(eid.clone())
+                            .or_default()
+                            .push((member.clone(), EdgeKind::Member));
+                    }
 
-            // Faction membership
-            for member in &entity.members {
-                edges.push(GraphEdge {
-                    from: member.clone(),
-                    to: entity.id.clone(),
-                    kind: EdgeKind::Member,
-                });
-                neighbors
-                    .entry(member.clone())
-                    .or_default()
-                    .push((entity.id.clone(), EdgeKind::Member));
-                neighbors
-                    .entry(entity.id.clone())
-                    .or_default()
-                    .push((member.clone(), EdgeKind::Member));
-            }
-
-            // Faction rivals
-            for rival in &entity.rivals {
-                edges.push(GraphEdge {
-                    from: entity.id.clone(),
-                    to: rival.clone(),
-                    kind: EdgeKind::Rival,
-                });
-                neighbors
-                    .entry(entity.id.clone())
-                    .or_default()
-                    .push((rival.clone(), EdgeKind::Rival));
+                    // Faction rivals
+                    for rival in &f.rivals {
+                        edges.push(GraphEdge {
+                            from: eid.clone(),
+                            to: rival.clone(),
+                            kind: EdgeKind::Rival,
+                        });
+                        neighbors
+                            .entry(eid.clone())
+                            .or_default()
+                            .push((rival.clone(), EdgeKind::Rival));
+                    }
+                }
             }
         }
 
@@ -286,7 +295,14 @@ impl WorldGraph {
         for edge in &self.edges {
             let fact = match &edge.kind {
                 EdgeKind::At => format!("at({}, {}).", edge.from, edge.to),
-                EdgeKind::Rel(r) => format!("rel({}, {}, {r}).", edge.from, edge.to),
+                EdgeKind::Rel(r) => {
+                    let quoted = if r.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+                        r.clone()
+                    } else {
+                        format!("\"{}\"", r.replace('"', "\\\"").replace('\'', ""))
+                    };
+                    format!("rel({}, {}, {quoted}).", edge.from, edge.to)
+                }
                 EdgeKind::Connected => format!("connected({}, {}).", edge.from, edge.to),
                 EdgeKind::Member => format!("member({}, {}).", edge.from, edge.to),
                 EdgeKind::Rival => format!("rival({}, {}).", edge.from, edge.to),
@@ -305,12 +321,11 @@ impl WorldGraph {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::input::entity::{Entity, Relationship};
+    use crate::input::entity::{Character, Entity, Location, Relationship};
 
     fn make_world() -> Vec<Entity> {
         vec![
-            Entity {
-                entity_type: "character".into(),
+            Entity::Character(Character {
                 id: "kian".into(),
                 name: Some("基安".into()),
                 traits: vec![],
@@ -320,15 +335,11 @@ mod tests {
                 location: Some("wasteland".into()),
                 relationships: vec![],
                 inventory: vec![],
-                alignment: None,
-                rivals: vec![],
-                members: vec![],
-                properties: vec![],
-                connections: vec![],
-                tags: vec![],
-            },
-            Entity {
-                entity_type: "character".into(),
+                goals: vec![],
+            tags: vec![],
+                description: None,
+            }),
+            Entity::Character(Character {
                 id: "nova".into(),
                 name: Some("诺娃".into()),
                 traits: vec![],
@@ -341,49 +352,26 @@ mod tests {
                     rel: "enemy".into(),
                 }],
                 inventory: vec![],
-                alignment: None,
-                rivals: vec![],
-                members: vec![],
-                properties: vec![],
-                connections: vec![],
-                tags: vec![],
-            },
-            Entity {
-                entity_type: "location".into(),
+                goals: vec![],
+            tags: vec![],
+                description: None,
+            }),
+            Entity::Location(Location {
                 id: "wasteland".into(),
                 name: Some("废土".into()),
-                traits: vec![],
-                beliefs: vec![],
-                desires: vec![],
-                intentions: vec![],
-                location: None,
-                relationships: vec![],
-                inventory: vec![],
-                alignment: None,
-                rivals: vec![],
-                members: vec![],
                 properties: vec![],
                 connections: vec!["oasis".into()],
                 tags: vec![],
-            },
-            Entity {
-                entity_type: "location".into(),
+                description: None,
+            }),
+            Entity::Location(Location {
                 id: "oasis".into(),
                 name: Some("绿洲".into()),
-                traits: vec![],
-                beliefs: vec![],
-                desires: vec![],
-                intentions: vec![],
-                location: None,
-                relationships: vec![],
-                inventory: vec![],
-                alignment: None,
-                rivals: vec![],
-                members: vec![],
                 properties: vec![],
                 connections: vec![],
                 tags: vec![],
-            },
+                description: None,
+            }),
         ]
     }
 

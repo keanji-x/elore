@@ -361,8 +361,8 @@ mod tests {
 
     #[test]
     fn replay_entities_applies_effects() {
-        let mut entities = vec![Entity {
-            entity_type: "character".into(),
+        use crate::input::entity::Character;
+        let mut entities = vec![Entity::Character(Character {
             id: "kian".into(),
             name: None,
             traits: vec![],
@@ -372,13 +372,10 @@ mod tests {
             location: Some("wasteland".into()),
             relationships: vec![],
             inventory: vec!["刀".into()],
-            alignment: None,
-            rivals: vec![],
-            members: vec![],
-            properties: vec![],
-            connections: vec![],
+            goals: vec![],
             tags: vec![],
-        }];
+            description: None,
+        })];
 
         let history = History {
             entries: vec![
@@ -402,14 +399,15 @@ mod tests {
         };
 
         History::replay_entities(&mut entities, &history, None);
-        assert!(entities[0].inventory.is_empty());
-        assert_eq!(entities[0].location.as_deref(), Some("oasis"));
+        let c = entities[0].as_character().unwrap();
+        assert!(c.inventory.is_empty());
+        assert_eq!(c.location.as_deref(), Some("oasis"));
     }
 
     #[test]
     fn replay_before_excludes_current() {
-        let mut entities = vec![Entity {
-            entity_type: "character".into(),
+        use crate::input::entity::Character;
+        let mut entities = vec![Entity::Character(Character {
             id: "kian".into(),
             name: None,
             traits: vec![],
@@ -419,13 +417,10 @@ mod tests {
             location: Some("wasteland".into()),
             relationships: vec![],
             inventory: vec![],
-            alignment: None,
-            rivals: vec![],
-            members: vec![],
-            properties: vec![],
-            connections: vec![],
+            goals: vec![],
             tags: vec![],
-        }];
+            description: None,
+        })];
 
         let history = History {
             entries: vec![
@@ -449,7 +444,7 @@ mod tests {
         };
 
         History::replay_before(&mut entities, &history, "ch02");
-        assert_eq!(entities[0].traits, vec!["trait_ch01"]);
+        assert_eq!(entities[0].as_character().unwrap().traits, vec!["trait_ch01"]);
     }
 
     #[test]

@@ -139,18 +139,18 @@ pub fn run(
     }
 
     // ── Appendix: Cast List ───────────────────────────────────────
-    let entities = entity::load_entities(&entities_dir).unwrap_or_default();
+    let entities = entity::load_entities(&entities_dir)?;
     let characters: Vec<_> = entities
         .iter()
-        .filter(|e| e.entity_type == "character")
+        .filter(|e| e.is_character())
         .collect();
     let locations: Vec<_> = entities
         .iter()
-        .filter(|e| e.entity_type == "location")
+        .filter(|e| e.is_location())
         .collect();
     let factions: Vec<_> = entities
         .iter()
-        .filter(|e| e.entity_type == "faction")
+        .filter(|e| e.is_faction())
         .collect();
 
     if !characters.is_empty() || !locations.is_empty() {
@@ -159,10 +159,12 @@ pub fn run(
         if !characters.is_empty() {
             doc.push_str("### 人物\n\n");
             for c in &characters {
-                let name = c.name.as_deref().unwrap_or(&c.id);
-                doc.push_str(&format!("- **{}** (`{}`)", name, c.id));
-                if !c.traits.is_empty() {
-                    doc.push_str(&format!(" — {}", c.traits.join("、")));
+                let name = c.name().unwrap_or(c.id());
+                doc.push_str(&format!("- **{}** (`{}`)", name, c.id()));
+                if let Some(ch) = c.as_character() {
+                    if !ch.traits.is_empty() {
+                        doc.push_str(&format!(" — {}", ch.traits.join("、")));
+                    }
                 }
                 doc.push('\n');
             }
@@ -172,8 +174,8 @@ pub fn run(
         if !locations.is_empty() {
             doc.push_str("### 地点\n\n");
             for loc in &locations {
-                let name = loc.name.as_deref().unwrap_or(&loc.id);
-                doc.push_str(&format!("- **{}** (`{}`)\n", name, loc.id));
+                let name = loc.name().unwrap_or(loc.id());
+                doc.push_str(&format!("- **{}** (`{}`)\n", name, loc.id()));
             }
             doc.push('\n');
         }
@@ -181,8 +183,8 @@ pub fn run(
         if !factions.is_empty() {
             doc.push_str("### 阵营\n\n");
             for f in &factions {
-                let name = f.name.as_deref().unwrap_or(&f.id);
-                doc.push_str(&format!("- **{}** (`{}`)\n", name, f.id));
+                let name = f.name().unwrap_or(f.id());
+                doc.push_str(&format!("- **{}** (`{}`)\n", name, f.id()));
             }
             doc.push('\n');
         }
