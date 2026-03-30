@@ -100,13 +100,12 @@ pub fn audit_effects(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ledger::input::entity::Entity;
+    use ledger::input::entity::{Character, Entity};
 
     fn snap() -> Snapshot {
         Snapshot::from_parts(
             "ch01",
-            vec![Entity {
-                entity_type: "character".into(),
+            vec![Entity::Character(Character {
                 id: "kian".into(),
                 name: None,
                 traits: vec![],
@@ -116,13 +115,10 @@ mod tests {
                 location: None,
                 relationships: vec![],
                 inventory: vec!["刀".into()],
-                alignment: None,
-                rivals: vec![],
-                members: vec![],
-                properties: vec![],
-                connections: vec![],
-                tags: vec![],
-            }],
+                goals: vec![],
+            tags: vec![],
+                description: None,
+            })],
             vec![],
             vec![],
         )

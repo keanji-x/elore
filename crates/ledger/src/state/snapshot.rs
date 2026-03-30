@@ -44,13 +44,22 @@ impl Snapshot {
     ) -> Result<Self, LedgerError> {
         // 1. Load genesis data
         let mut entities = entity::load_entities(entities_dir)?;
-        let mut secrets = secret::load_secrets(entities_dir)?;
-        let mut goals = goal::load_goal_entities(entities_dir)?;
-
+        let mut secrets = secret::load_secrets(everlore_dir)?;
         // 2. Load full history and replay up to this chapter
         let history = History::load(everlore_dir);
         History::replay_entities(&mut entities, &history, Some(chapter));
         History::replay_secrets(&mut secrets, &history, Some(chapter));
+
+        // Extract goals from character cards (goals live in Character struct)
+        let mut goals = goal::extract_goal_entities(&entities);
+        // Also load legacy YAML goal files for backward compat
+        if let Ok(yaml_goals) = goal::load_goal_entities(entities_dir) {
+            for yg in yaml_goals {
+                if !goals.iter().any(|g| g.id == yg.id) {
+                    goals.push(yg);
+                }
+            }
+        }
         History::replay_goals(&mut goals, &history, Some(chapter));
 
         Ok(Self {
@@ -70,12 +79,20 @@ impl Snapshot {
         everlore_dir: &Path,
     ) -> Result<Self, LedgerError> {
         let mut entities = entity::load_entities(entities_dir)?;
-        let mut secrets = secret::load_secrets(entities_dir)?;
-        let mut goals = goal::load_goal_entities(entities_dir)?;
+        let mut secrets = secret::load_secrets(everlore_dir)?;
 
         let history = History::load(everlore_dir);
         History::replay_before(&mut entities, &history, chapter);
-        // replay_before for secrets and goals: replay all chapters before current
+
+        let mut goals = goal::extract_goal_entities(&entities);
+        if let Ok(yaml_goals) = goal::load_goal_entities(entities_dir) {
+            for yg in yaml_goals {
+                if !goals.iter().any(|g| g.id == yg.id) {
+                    goals.push(yg);
+                }
+            }
+        }
+
         let chapters = history.chapters();
         let prev_chapter = chapters
             .iter()
@@ -115,7 +132,7 @@ impl Snapshot {
 
     /// Find an entity by ID.
     pub fn entity(&self, id: &str) -> Option<&Entity> {
-        self.entities.iter().find(|e| e.id == id)
+        self.entities.iter().find(|e| e.id() == id)
     }
 
     /// Find a secret by ID.
@@ -127,7 +144,7 @@ impl Snapshot {
     pub fn characters(&self) -> Vec<&Entity> {
         self.entities
             .iter()
-            .filter(|e| e.entity_type == "character")
+            .filter(|e| e.is_character())
             .collect()
     }
 
@@ -135,7 +152,7 @@ impl Snapshot {
     pub fn locations(&self) -> Vec<&Entity> {
         self.entities
             .iter()
-            .filter(|e| e.entity_type == "location")
+            .filter(|e| e.is_location())
             .collect()
     }
 
@@ -143,7 +160,7 @@ impl Snapshot {
     pub fn factions(&self) -> Vec<&Entity> {
         self.entities
             .iter()
-            .filter(|e| e.entity_type == "faction")
+            .filter(|e| e.is_faction())
             .collect()
     }
 }
@@ -158,10 +175,10 @@ mod tests {
 
     #[test]
     fn from_parts_creates_snapshot() {
+        use crate::input::entity::Character;
         let snap = Snapshot::from_parts(
             "ch01",
-            vec![Entity {
-                entity_type: "character".into(),
+            vec![Entity::Character(Character {
                 id: "kian".into(),
                 name: None,
                 traits: vec![],
@@ -171,13 +188,10 @@ mod tests {
                 location: Some("wasteland".into()),
                 relationships: vec![],
                 inventory: vec![],
-                alignment: None,
-                rivals: vec![],
-                members: vec![],
-                properties: vec![],
-                connections: vec![],
-                tags: vec![],
-            }],
+                goals: vec![],
+            tags: vec![],
+                description: None,
+            })],
             vec![],
             vec![],
         );

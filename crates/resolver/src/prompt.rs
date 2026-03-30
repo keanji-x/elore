@@ -121,10 +121,12 @@ fn render_prompt(
 
     // Locations
     for loc in snapshot.locations() {
-        let name = loc.name.as_deref().unwrap_or(&loc.id);
-        p.push_str(&format!("- **{name}** ({})", loc.id));
-        if !loc.properties.is_empty() {
-            p.push_str(&format!(": {}", loc.properties.join(", ")));
+        let name = loc.name().unwrap_or(loc.id());
+        p.push_str(&format!("- **{name}** ({})", loc.id()));
+        if let Some(l) = loc.as_location() {
+            if !l.properties.is_empty() {
+                p.push_str(&format!(": {}", l.properties.join(", ")));
+            }
         }
         p.push('\n');
     }
@@ -172,39 +174,41 @@ fn render_prompt(
 }
 
 fn render_character(p: &mut String, c: &Entity, pov: Option<&str>) {
-    let is_pov = pov.is_none_or(|v| v == c.id);
-    let name = c.name.as_deref().unwrap_or(&c.id);
+    let is_pov = pov.is_none_or(|v| v == c.id());
+    let name = c.name().unwrap_or(c.id());
     if is_pov {
-        p.push_str(&format!("### {name} ({})\n", c.id));
+        p.push_str(&format!("### {name} ({})\n", c.id()));
     } else {
-        p.push_str(&format!("### {name} ({}) [非视角角色]\n", c.id));
+        p.push_str(&format!("### {name} ({}) [非视角角色]\n", c.id()));
     }
-    if !c.traits.is_empty() {
-        p.push_str(&format!("- 特质: {}\n", c.traits.join(", ")));
-    }
-    if let Some(loc) = &c.location {
-        p.push_str(&format!("- 位置: {loc}\n"));
-    }
-    if is_pov {
-        if !c.beliefs.is_empty() {
-            p.push_str(&format!("- 信念: {}\n", c.beliefs.join(", ")));
+    if let Some(ch) = c.as_character() {
+        if !ch.traits.is_empty() {
+            p.push_str(&format!("- 特质: {}\n", ch.traits.join(", ")));
         }
-        if !c.desires.is_empty() {
-            p.push_str(&format!("- 欲望: {}\n", c.desires.join(", ")));
+        if let Some(loc) = &ch.location {
+            p.push_str(&format!("- 位置: {loc}\n"));
         }
-    } else if !c.beliefs.is_empty() || !c.desires.is_empty() {
-        p.push_str("- BDI: [已隐藏]\n");
-    }
-    if !c.inventory.is_empty() {
-        p.push_str(&format!("- 物品: {}\n", c.inventory.join(", ")));
-    }
-    if !c.relationships.is_empty() {
-        let rels: Vec<String> = c
-            .relationships
-            .iter()
-            .map(|r| format!("{}({})", r.rel, r.target))
-            .collect();
-        p.push_str(&format!("- 关系: {}\n", rels.join(", ")));
+        if is_pov {
+            if !ch.beliefs.is_empty() {
+                p.push_str(&format!("- 信念: {}\n", ch.beliefs.join(", ")));
+            }
+            if !ch.desires.is_empty() {
+                p.push_str(&format!("- 欲望: {}\n", ch.desires.join(", ")));
+            }
+        } else if !ch.beliefs.is_empty() || !ch.desires.is_empty() {
+            p.push_str("- BDI: [已隐藏]\n");
+        }
+        if !ch.inventory.is_empty() {
+            p.push_str(&format!("- 物品: {}\n", ch.inventory.join(", ")));
+        }
+        if !ch.relationships.is_empty() {
+            let rels: Vec<String> = ch
+                .relationships
+                .iter()
+                .map(|r| format!("{}({})", r.rel, r.target))
+                .collect();
+            p.push_str(&format!("- 关系: {}\n", rels.join(", ")));
+        }
     }
     p.push('\n');
 }
@@ -274,14 +278,13 @@ fn render_secrets(p: &mut String, secrets: &[Secret], pov: Option<&str>) {
 mod tests {
     use super::*;
     use crate::drama::{DirectorNotes, Pacing};
-    use ledger::input::entity::Relationship;
+    use ledger::input::entity::{Character, Relationship};
 
     fn snap() -> Snapshot {
         Snapshot::from_parts(
             "ch03",
             vec![
-                Entity {
-                    entity_type: "character".into(),
+                Entity::Character(Character {
                     id: "kian".into(),
                     name: Some("基安".into()),
                     traits: vec!["拾荒者".into()],
@@ -294,15 +297,11 @@ mod tests {
                         rel: "wary".into(),
                     }],
                     inventory: vec!["电磁短刀".into()],
-                    alignment: None,
-                    rivals: vec![],
-                    members: vec![],
-                    properties: vec![],
-                    connections: vec![],
+                    goals: vec![],
                     tags: vec![],
-                },
-                Entity {
-                    entity_type: "character".into(),
+                    description: None,
+                }),
+                Entity::Character(Character {
                     id: "nova".into(),
                     name: Some("诺娃".into()),
                     traits: vec!["猎手".into()],
@@ -312,13 +311,10 @@ mod tests {
                     location: Some("oasis_gate".into()),
                     relationships: vec![],
                     inventory: vec![],
-                    alignment: None,
-                    rivals: vec![],
-                    members: vec![],
-                    properties: vec![],
-                    connections: vec![],
+                    goals: vec![],
                     tags: vec![],
-                },
+                    description: None,
+                }),
             ],
             vec![],
             vec![],

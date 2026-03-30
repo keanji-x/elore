@@ -45,8 +45,8 @@ pub struct EntityDiff {
 impl SnapshotDiff {
     /// Compute the diff between two snapshots.
     pub fn compute(old: &Snapshot, new: &Snapshot) -> Self {
-        let old_ids: BTreeSet<&str> = old.entities.iter().map(|e| e.id.as_str()).collect();
-        let new_ids: BTreeSet<&str> = new.entities.iter().map(|e| e.id.as_str()).collect();
+        let old_ids: BTreeSet<&str> = old.entities.iter().map(|e| e.id()).collect();
+        let new_ids: BTreeSet<&str> = new.entities.iter().map(|e| e.id()).collect();
 
         let added: Vec<String> = new_ids
             .difference(&old_ids)
@@ -60,8 +60,8 @@ impl SnapshotDiff {
         // Compare shared entities
         let mut entity_diffs = Vec::new();
         for id in old_ids.intersection(&new_ids) {
-            let old_e = old.entities.iter().find(|e| e.id == *id).unwrap();
-            let new_e = new.entities.iter().find(|e| e.id == *id).unwrap();
+            let old_e = old.entities.iter().find(|e| e.id() == *id).unwrap();
+            let new_e = new.entities.iter().find(|e| e.id() == *id).unwrap();
             let diff = diff_entity(old_e, new_e);
             if !diff.is_empty() {
                 entity_diffs.push(diff);
@@ -161,57 +161,48 @@ impl EntityDiff {
 }
 
 fn diff_entity(old: &Entity, new: &Entity) -> EntityDiff {
-    let old_traits: BTreeSet<&String> = old.traits.iter().collect();
-    let new_traits: BTreeSet<&String> = new.traits.iter().collect();
-
-    let old_beliefs: BTreeSet<&String> = old.beliefs.iter().collect();
-    let new_beliefs: BTreeSet<&String> = new.beliefs.iter().collect();
-
-    let old_rels: BTreeSet<(String, String)> = old
-        .relationships
-        .iter()
-        .map(|r| (r.target.clone(), r.rel.clone()))
-        .collect();
-    let new_rels: BTreeSet<(String, String)> = new
-        .relationships
-        .iter()
-        .map(|r| (r.target.clone(), r.rel.clone()))
-        .collect();
-
-    let old_inv: BTreeSet<&String> = old.inventory.iter().collect();
-    let new_inv: BTreeSet<&String> = new.inventory.iter().collect();
-
-    let location_change = if old.location != new.location {
-        Some((old.location.clone(), new.location.clone()))
-    } else {
-        None
+    let mut diff = EntityDiff {
+        id: old.id().to_string(),
+        entity_type: old.entity_type().to_string(),
+        location_change: None,
+        added_traits: vec![],
+        removed_traits: vec![],
+        added_beliefs: vec![],
+        removed_beliefs: vec![],
+        added_relationships: vec![],
+        removed_relationships: vec![],
+        added_inventory: vec![],
+        removed_inventory: vec![],
     };
 
-    EntityDiff {
-        id: old.id.clone(),
-        entity_type: old.entity_type.clone(),
-        location_change,
-        added_traits: new_traits
-            .difference(&old_traits)
-            .map(|s| (*s).clone())
-            .collect(),
-        removed_traits: old_traits
-            .difference(&new_traits)
-            .map(|s| (*s).clone())
-            .collect(),
-        added_beliefs: new_beliefs
-            .difference(&old_beliefs)
-            .map(|s| (*s).clone())
-            .collect(),
-        removed_beliefs: old_beliefs
-            .difference(&new_beliefs)
-            .map(|s| (*s).clone())
-            .collect(),
-        added_relationships: new_rels.difference(&old_rels).cloned().collect(),
-        removed_relationships: old_rels.difference(&new_rels).cloned().collect(),
-        added_inventory: new_inv.difference(&old_inv).map(|s| (*s).clone()).collect(),
-        removed_inventory: old_inv.difference(&new_inv).map(|s| (*s).clone()).collect(),
+    // Character-specific fields: only compare if both are characters
+    if let (Some(old_c), Some(new_c)) = (old.as_character(), new.as_character()) {
+        let old_traits: BTreeSet<&String> = old_c.traits.iter().collect();
+        let new_traits: BTreeSet<&String> = new_c.traits.iter().collect();
+        diff.added_traits = new_traits.difference(&old_traits).map(|s| (*s).clone()).collect();
+        diff.removed_traits = old_traits.difference(&new_traits).map(|s| (*s).clone()).collect();
+
+        let old_beliefs: BTreeSet<&String> = old_c.beliefs.iter().collect();
+        let new_beliefs: BTreeSet<&String> = new_c.beliefs.iter().collect();
+        diff.added_beliefs = new_beliefs.difference(&old_beliefs).map(|s| (*s).clone()).collect();
+        diff.removed_beliefs = old_beliefs.difference(&new_beliefs).map(|s| (*s).clone()).collect();
+
+        let old_rels: BTreeSet<(String, String)> = old_c.relationships.iter().map(|r| (r.target.clone(), r.rel.clone())).collect();
+        let new_rels: BTreeSet<(String, String)> = new_c.relationships.iter().map(|r| (r.target.clone(), r.rel.clone())).collect();
+        diff.added_relationships = new_rels.difference(&old_rels).cloned().collect();
+        diff.removed_relationships = old_rels.difference(&new_rels).cloned().collect();
+
+        let old_inv: BTreeSet<&String> = old_c.inventory.iter().collect();
+        let new_inv: BTreeSet<&String> = new_c.inventory.iter().collect();
+        diff.added_inventory = new_inv.difference(&old_inv).map(|s| (*s).clone()).collect();
+        diff.removed_inventory = old_inv.difference(&new_inv).map(|s| (*s).clone()).collect();
+
+        if old_c.location != new_c.location {
+            diff.location_change = Some((old_c.location.clone(), new_c.location.clone()));
+        }
     }
+
+    diff
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -223,8 +214,8 @@ mod tests {
     use super::*;
 
     fn make_entity(id: &str, location: &str, traits: Vec<&str>) -> Entity {
-        Entity {
-            entity_type: "character".into(),
+        use crate::input::entity::Character;
+        Entity::Character(Character {
             id: id.into(),
             name: None,
             traits: traits.into_iter().map(|s| s.into()).collect(),
@@ -234,13 +225,10 @@ mod tests {
             location: Some(location.into()),
             relationships: vec![],
             inventory: vec![],
-            alignment: None,
-            rivals: vec![],
-            members: vec![],
-            properties: vec![],
-            connections: vec![],
+            goals: vec![],
             tags: vec![],
-        }
+            description: None,
+        })
     }
 
     #[test]

@@ -17,18 +17,18 @@ pub fn run(project: &Path) -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Entities
-    let entities = entity::load_entities(&entities_dir).unwrap_or_default();
+    let entities = entity::load_entities(&entities_dir)?;
     let chars: Vec<_> = entities
         .iter()
-        .filter(|e| e.entity_type == "character")
+        .filter(|e| e.is_character())
         .collect();
     let locs: Vec<_> = entities
         .iter()
-        .filter(|e| e.entity_type == "location")
+        .filter(|e| e.is_location())
         .collect();
     let facs: Vec<_> = entities
         .iter()
-        .filter(|e| e.entity_type == "faction")
+        .filter(|e| e.is_faction())
         .collect();
     println!(
         "\n实体: {} 角色, {} 地点, {} 势力",
@@ -38,13 +38,13 @@ pub fn run(project: &Path) -> Result<(), Box<dyn std::error::Error>> {
     );
 
     // Secrets
-    let secrets = secret::load_secrets(&entities_dir).unwrap_or_default();
+    let secrets = secret::load_secrets(&everlore)?;
     if !secrets.is_empty() {
         println!("秘密: {}", secrets.len());
     }
 
     // Goals
-    let goals = goal::load_goal_entities(&entities_dir).unwrap_or_default();
+    let goals = goal::load_goal_entities(&everlore)?;
     if !goals.is_empty() {
         let total: usize = goals.iter().map(|ge| ge.goals.len()).sum();
         println!("目标: {} 角色, {} 目标", goals.len(), total);

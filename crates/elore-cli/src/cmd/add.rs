@@ -12,7 +12,7 @@ use ledger::effect::beat::Beat;
 use ledger::effect::history::History;
 use ledger::input::{entity, secret};
 use ledger::state::constraint::check_assertions;
-use ledger::state::phase::Phase;
+use ledger::state::phase::{BeatPlan, ConstraintSource, Phase, StateAssertion};
 use ledger::state::phase_manager::ProjectState;
 use ledger::state::snapshot::Snapshot;
 
@@ -21,7 +21,8 @@ use ledger::state::snapshot::Snapshot;
 // ══════════════════════════════════════════════════════════════════
 
 pub fn add_entity(project: &Path, raw_json: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let entities_dir = project.join(".everlore/entities");
+    let everlore_dir = project.join(".everlore");
+    let entities_dir = everlore_dir.join("entities");
     std::fs::create_dir_all(&entities_dir)?;
 
     // Parse and apply defaults
@@ -31,9 +32,9 @@ pub fn add_entity(project: &Path, raw_json: &str) -> Result<(), Box<dyn std::err
     apply_entity_defaults(&mut v);
 
     // Validate references
-    let existing = entity::load_entities(&entities_dir).unwrap_or_default();
-    let existing_secrets = secret::load_secrets(&entities_dir).unwrap_or_default();
-    let existing_ids: Vec<&str> = existing.iter().map(|e| e.id.as_str()).collect();
+    let existing = entity::load_entities(&entities_dir)?;
+    let existing_secrets = secret::load_secrets(&everlore_dir)?;
+    let existing_ids: Vec<&str> = existing.iter().map(|e| e.id()).collect();
     let _secret_ids: Vec<&str> = existing_secrets.iter().map(|s| s.id.as_str()).collect();
 
     // Check location exists
@@ -220,85 +221,9 @@ pub fn add_entities_batch(
     Ok(())
 }
 
-pub fn add_drama(project: &Path, raw_json: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let everlore = project.join(".everlore");
-    let drama_dir = everlore.join("drama");
-    std::fs::create_dir_all(&drama_dir)?;
-
-    let mut v: Value = serde_json::from_str(raw_json).map_err(|e| format!("JSON 解析失败: {e}"))?;
-
-    let chapter = require_str(&v, "chapter", "drama")?;
-    apply_drama_defaults(&mut v);
-
-    // Validate entity/secret refs in dramatic_intents
-    let entities_dir = everlore.join("entities");
-    let existing = entity::load_entities(&entities_dir).unwrap_or_default();
-    let existing_secrets = secret::load_secrets(&entities_dir).unwrap_or_default();
-    let entity_ids: Vec<&str> = existing.iter().map(|e| e.id.as_str()).collect();
-    let secret_ids: Vec<&str> = existing_secrets.iter().map(|s| s.id.as_str()).collect();
-
-    if let Some(intents) = v.get("dramatic_intents").and_then(|i| i.as_array()) {
-        for intent in intents {
-            // Check between[] members
-            if let Some(between) = intent.get("between").and_then(|b| b.as_array()) {
-                for member in between {
-                    if let Some(id) = member.as_str()
-                        && !entity_ids.contains(&id)
-                    {
-                        return Err(format!("戏剧意图引用了不存在的实体 '{id}'").into());
-                    }
-                }
-            }
-            // Check at location
-            if let Some(at) = intent.get("at").and_then(|a| a.as_str())
-                && !entity_ids.contains(&at)
-            {
-                return Err(format!("戏剧意图引用了不存在的地点 '{at}'").into());
-            }
-            // Check secret ref
-            if let Some(sec) = intent.get("secret").and_then(|s| s.as_str())
-                && !secret_ids.contains(&sec)
-            {
-                return Err(format!("戏剧意图引用了不存在的秘密 '{sec}'").into());
-            }
-        }
-    }
-
-    // Check POV entity
-    if let Some(pov) = v.pointer("/director_notes/pov").and_then(|p| p.as_str())
-        && !entity_ids.contains(&pov)
-    {
-        return Err(format!("POV 实体 '{pov}' 不存在").into());
-    }
-
-    // Upsert as YAML
-    let path = drama_dir.join(format!("{chapter}.yaml"));
-    let exists = path.exists();
-
-    let final_v = if exists {
-        let old_yaml = std::fs::read_to_string(&path)?;
-        let old: Value = serde_yaml::from_str(&old_yaml)?;
-        merge_json(old, v)
-    } else {
-        v
-    };
-
-    let yaml = serde_yaml::to_string(&final_v)?;
-    std::fs::write(&path, yaml)?;
-
-    let action = if exists { "更新" } else { "创建" };
-    println!(
-        "{} {} drama → {}",
-        "✓".green().bold(),
-        action,
-        chapter.bold()
-    );
-    println!("  {}", path.display());
-    Ok(())
-}
-
 pub fn add_secret(project: &Path, raw_json: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let entities_dir = project.join(".everlore/entities");
+    let everlore_dir = project.join(".everlore");
+    let entities_dir = everlore_dir.join("entities");
     std::fs::create_dir_all(&entities_dir)?;
 
     let mut v: Value = serde_json::from_str(raw_json).map_err(|e| format!("JSON 解析失败: {e}"))?;
@@ -308,8 +233,8 @@ pub fn add_secret(project: &Path, raw_json: &str) -> Result<(), Box<dyn std::err
     apply_secret_defaults(&mut v);
 
     // Validate known_by entities
-    let existing = entity::load_entities(&entities_dir).unwrap_or_default();
-    let entity_ids: Vec<&str> = existing.iter().map(|e| e.id.as_str()).collect();
+    let existing = entity::load_entities(&entities_dir)?;
+    let entity_ids: Vec<&str> = existing.iter().map(|e| e.id()).collect();
 
     if let Some(known_by) = v.get("known_by").and_then(|k| k.as_array()) {
         for member in known_by {
@@ -322,7 +247,7 @@ pub fn add_secret(project: &Path, raw_json: &str) -> Result<(), Box<dyn std::err
     }
 
     // Load-upsert secrets.yaml
-    let secrets_path = entities_dir.join("secrets.yaml");
+    let secrets_path = everlore_dir.join("secrets.yaml");
     let mut secrets_doc: Value = if secrets_path.exists() {
         let content = std::fs::read_to_string(&secrets_path)?;
         serde_yaml::from_str(&content).unwrap_or(json!({"secrets": []}))
@@ -388,28 +313,6 @@ fn apply_entity_defaults(v: &mut Value) {
     }
 }
 
-fn apply_drama_defaults(v: &mut Value) {
-    set_default(v, "dramatic_intents", json!([]));
-    set_default(
-        v,
-        "pacing",
-        json!({
-            "build_up": 0.4,
-            "climax": 0.4,
-            "resolution": 0.2
-        }),
-    );
-    set_default(
-        v,
-        "director_notes",
-        json!({
-            "required_effects": [],
-            "suggested_effects": [],
-            "highlights": []
-        }),
-    );
-}
-
 fn apply_secret_defaults(v: &mut Value) {
     set_default(v, "known_by", json!([]));
     set_default(v, "revealed_to_reader", json!(false));
@@ -454,6 +357,7 @@ fn require_str(v: &Value, field: &str, ctx: &str) -> Result<String, Box<dyn std:
 pub fn add_phase(project: &Path, raw_json: &str) -> Result<(), Box<dyn std::error::Error>> {
     let everlore = project.join(".everlore");
     let phases_dir = everlore.join("phases");
+    let entities_dir = everlore.join("entities");
     std::fs::create_dir_all(&phases_dir)?;
 
     let v: Value = serde_json::from_str(raw_json).map_err(|e| format!("JSON 解析失败: {e}"))?;
@@ -461,8 +365,16 @@ pub fn add_phase(project: &Path, raw_json: &str) -> Result<(), Box<dyn std::erro
     let id = require_str(&v, "id", "phase")?;
 
     // Build Phase struct — serde handles defaults
-    let phase: Phase =
+    let mut phase: Phase =
         serde_json::from_value(v.clone()).map_err(|e| format!("Phase 解析失败: {e}"))?;
+    let mut derivation_notes = Vec::new();
+    if phase.synopsis.is_some() && !phase.has_any_constraints() {
+        let entities = entity::load_entities(&entities_dir)?;
+        derivation_notes = derive_phase_constraints_from_synopsis(&mut phase, &entities);
+        phase.constraint_source = Some(ConstraintSource::SynopsisDerived);
+    } else if phase.has_any_constraints() && phase.constraint_source.is_none() {
+        phase.constraint_source = Some(ConstraintSource::Manual);
+    }
 
     // Save definition
     phase.save(&phases_dir)?;
@@ -482,7 +394,73 @@ pub fn add_phase(project: &Path, raw_json: &str) -> Result<(), Box<dyn std::erro
     if let Some(syn) = &phase.synopsis {
         println!("  {}", syn.dimmed());
     }
+    println!("  definition: {:?}", phase.definition_status());
+    for note in derivation_notes {
+        println!("  {} {}", "→".dimmed(), note);
+    }
     Ok(())
+}
+
+fn derive_phase_constraints_from_synopsis(
+    phase: &mut Phase,
+    entities: &[ledger::Entity],
+) -> Vec<String> {
+    let mut notes = Vec::new();
+    let synopsis = phase.synopsis.clone().unwrap_or_default();
+
+    let mentioned_entities: Vec<&ledger::Entity> = entities
+        .iter()
+        .filter(|entity| {
+            synopsis.contains(entity.id())
+                || entity
+                    .name()
+                    .is_some_and(|name| synopsis.contains(name))
+        })
+        .collect();
+
+    if !mentioned_entities.is_empty() {
+        phase.constraints.ledger.invariants = mentioned_entities
+            .iter()
+            .map(|entity| StateAssertion {
+                query: format!("entity_alive({})", entity.id()),
+                expected: "true".into(),
+            })
+            .collect();
+        notes.push(format!(
+            "从 synopsis 匹配实体，自动生成 {} 条 L1 invariants",
+            phase.constraints.ledger.invariants.len()
+        ));
+    } else {
+        notes.push("未从 synopsis 匹配到实体，L1 仍需人工补充".into());
+    }
+
+    phase.constraints.resolver.min_effects =
+        Some(phase.constraints.resolver.min_effects.unwrap_or(1));
+    notes.push("为 L2 设置默认 min_effects = 1".into());
+
+    if phase.constraints.executor.words.is_none() {
+        phase.constraints.executor.words = Some((800, 4000));
+        notes.push("为 L3 设置默认 words = 800-4000".into());
+    }
+    if phase.constraints.executor.writing_plan.is_empty() {
+        phase.constraints.executor.writing_plan.push(BeatPlan {
+            label: "phase_arc".into(),
+            target_words: Some(1200),
+            effects: vec![],
+            guidance: Some(synopsis),
+        });
+        notes.push("为 L3 生成单步 writing_plan 占位".into());
+    }
+
+    if phase.constraints.evaluator.min_avg_score.is_none() {
+        phase.constraints.evaluator.min_avg_score = Some(3.0);
+    }
+    if phase.constraints.evaluator.max_boring_beats.is_none() {
+        phase.constraints.evaluator.max_boring_beats = Some(0);
+    }
+    notes.push("为 L4 设置默认 min_avg_score = 3.0, max_boring_beats = 0".into());
+
+    notes
 }
 
 pub fn add_beat(project: &Path, raw_json: &str) -> Result<(), Box<dyn std::error::Error>> {
@@ -548,7 +526,7 @@ pub fn add_beat(project: &Path, raw_json: &str) -> Result<(), Box<dyn std::error
         }
         println!(
             "  提示: snapshot 中的实体 IDs: {:?}",
-            snap.entities.iter().map(|e| &e.id).collect::<Vec<_>>()
+            snap.entities.iter().map(|e| e.id()).collect::<Vec<_>>()
         );
         return Err("L1 invariant violation".into());
     }

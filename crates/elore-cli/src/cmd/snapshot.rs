@@ -76,10 +76,11 @@ pub async fn write_prompt(
         None
     };
 
+    let reasoning = ledger::run_reasoning(&snap).await?;
     let prompt = AuthorPrompt::build(
         &snap,
         &drama_node,
-        None,
+        Some(&reasoning),
         prev_summary.as_deref(),
         outline_text.as_deref(),
     );
@@ -131,12 +132,13 @@ pub async fn run_pipeline(
     if let Some(p) = pov {
         drama_node.director_notes.pov = Some(p.to_string());
     }
-    let verdict = validate::validate(&snap, &drama_node, None);
+    let reasoning = ledger::run_reasoning(&snap).await?;
+    let verdict = validate::validate(&snap, &drama_node, Some(&reasoning));
     println!("  {}", verdict.render());
 
     let history = History::load(&everlore);
     let prev_summary = History::previous_chapter_summary(&history, chapter);
-    let prompt = AuthorPrompt::build(&snap, &drama_node, None, prev_summary.as_deref(), None);
+    let prompt = AuthorPrompt::build(&snap, &drama_node, Some(&reasoning), prev_summary.as_deref(), None);
 
     let drafts = project.join("drafts");
     std::fs::create_dir_all(&drafts)?;
