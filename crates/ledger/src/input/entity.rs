@@ -36,6 +36,21 @@ pub struct Relationship {
     /// Respect axis: -3 (contempt) to +3 (reverence). Default 0.
     #[serde(default)]
     pub respect: i8,
+    /// Facade affinity: what this character *pretends* to feel. None = no deception.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub facade_affinity: Option<i8>,
+    /// Facade respect: what this character *pretends* to feel. None = no deception.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub facade_respect: Option<i8>,
+}
+
+/// A structured intent targeting a specific entity.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct IntentTarget {
+    /// What the character intends to do (e.g. "刺杀", "保护", "欺骗").
+    pub action: String,
+    /// Target entity id.
+    pub target: String,
 }
 
 /// Entity enum — each variant contains only its relevant fields.
@@ -60,6 +75,14 @@ pub struct Character {
     pub desires: Vec<String>,
     #[serde(default)]
     pub intentions: Vec<String>,
+    /// Structured intent targets: `[{action: "刺杀", target: "liu_bang"}]`
+    /// Used by reasoning engine to derive `threatens` / `plots_against`.
+    #[serde(default)]
+    pub intent_targets: Vec<IntentTarget>,
+    /// Standardized desire tags for alliance matching (e.g. `["protect_liu_bang"]`).
+    /// Unlike free-text `desires`, these are IDs that can be matched across characters.
+    #[serde(default)]
+    pub desire_tags: Vec<String>,
     #[serde(default)]
     pub location: Option<String>,
     #[serde(default)]
@@ -100,6 +123,12 @@ pub struct Faction {
     pub rivals: Vec<String>,
     #[serde(default)]
     pub members: Vec<String>,
+    /// Faction leader (character id). Decision-maker for power dynamics.
+    #[serde(default)]
+    pub leader: Option<String>,
+    /// Faction military/political strength (optional, for power_advantage reasoning).
+    #[serde(default)]
+    pub strength: Option<u64>,
     #[serde(default)]
     pub tags: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -398,6 +427,8 @@ mod tests {
             beliefs: vec!["绿洲的财阀藏匿了世界上最后一条干净的地下水脉".into()],
             desires: vec![],
             intentions: vec![],
+            intent_targets: vec![],
+            desire_tags: vec![],
             location: Some("wasteland".into()),
             relationships: vec![],
             inventory: vec!["旧式防毒面具".into(), "电磁短刀".into()],

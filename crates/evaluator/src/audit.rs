@@ -112,6 +112,8 @@ mod tests {
                 beliefs: vec![],
                 desires: vec![],
                 intentions: vec![],
+                intent_targets: vec![],
+                desire_tags: vec![],
                 location: None,
                 relationships: vec![],
                 inventory: vec!["刀".into()],

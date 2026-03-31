@@ -133,6 +133,13 @@ fn emit_entity_facts(f: &mut FactSet, entity: &Entity) {
             for i in &c.intentions {
                 f.add("intends", vec![Arg::Id(id.into()), Arg::auto(i)]);
             }
+            for it in &c.intent_targets {
+                f.add("intent_target", vec![Arg::Id(id.into()), Arg::Id(it.target.clone())]);
+                f.add("intent_action", vec![Arg::Id(id.into()), Arg::Id(it.target.clone()), Arg::auto(&it.action)]);
+            }
+            for dt in &c.desire_tags {
+                f.add("desire_tag", vec![Arg::Id(id.into()), Arg::Id(dt.clone())]);
+            }
             if let Some(loc) = &c.location {
                 f.add("at", vec![Arg::Id(id.into()), Arg::Id(loc.clone())]);
             }
@@ -141,6 +148,12 @@ fn emit_entity_facts(f: &mut FactSet, entity: &Entity) {
                 f.add("trust", vec![Arg::Id(id.into()), Arg::Id(r.target.clone()), Arg::Int(r.trust as i64)]);
                 f.add("affinity", vec![Arg::Id(id.into()), Arg::Id(r.target.clone()), Arg::Int(r.affinity as i64)]);
                 f.add("respect", vec![Arg::Id(id.into()), Arg::Id(r.target.clone()), Arg::Int(r.respect as i64)]);
+                if let Some(fa) = r.facade_affinity {
+                    f.add("facade_affinity", vec![Arg::Id(id.into()), Arg::Id(r.target.clone()), Arg::Int(fa as i64)]);
+                }
+                if let Some(fr) = r.facade_respect {
+                    f.add("facade_respect", vec![Arg::Id(id.into()), Arg::Id(r.target.clone()), Arg::Int(fr as i64)]);
+                }
             }
             for item in &c.inventory {
                 f.add("has", vec![Arg::Id(id.into()), Arg::auto(item)]);
@@ -172,6 +185,12 @@ fn emit_entity_facts(f: &mut FactSet, entity: &Entity) {
             }
             for m in &fa.members {
                 f.add("member", vec![Arg::Id(m.clone()), Arg::Id(id.into())]);
+            }
+            if let Some(leader) = &fa.leader {
+                f.add("leader", vec![Arg::Id(leader.clone()), Arg::Id(id.into())]);
+            }
+            if let Some(s) = fa.strength {
+                f.add("strength", vec![Arg::Id(id.into()), Arg::Int(s as i64)]);
             }
             if let Some(name) = &fa.name {
                 f.add("name", vec![Arg::Id(id.into()), Arg::auto(name)]);
@@ -301,6 +320,8 @@ mod tests {
                     beliefs: vec![],
                     desires: vec![],
                     intentions: vec![],
+                    intent_targets: vec![],
+                    desire_tags: vec![],
                     location: Some("wasteland".into()),
                     relationships: vec![Relationship {
                         target: "nova".into(),
@@ -308,6 +329,8 @@ mod tests {
                         trust: 2,
                         affinity: 1,
                         respect: 0,
+                        facade_affinity: None,
+                        facade_respect: None,
                     }],
                     inventory: vec![],
                     goals: vec![],

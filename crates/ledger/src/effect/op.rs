@@ -143,6 +143,8 @@ impl Op {
                         trust: 0,
                         affinity: 0,
                         respect: 0,
+                        facade_affinity: None,
+                        facade_respect: None,
                     });
                 }
             }
@@ -542,6 +544,8 @@ mod tests {
             beliefs: vec![],
             desires: vec![],
             intentions: vec![],
+            intent_targets: vec![],
+            desire_tags: vec![],
             location: None,
             relationships: vec![],
             inventory: vec!["刀".into()],
@@ -568,6 +572,8 @@ mod tests {
             beliefs: vec![],
             desires: vec![],
             intentions: vec![],
+            intent_targets: vec![],
+            desire_tags: vec![],
             location: None,
             relationships: vec![],
             inventory: vec![],
@@ -699,6 +705,8 @@ mod tests {
             beliefs: vec!["世界是公平的".into()],
             desires: vec!["找水".into()],
             intentions: vec![],
+            intent_targets: vec![],
+            desire_tags: vec![],
             location: Some("wasteland".into()),
             relationships: vec![Relationship {
                 target: "nova".into(),
@@ -706,6 +714,8 @@ mod tests {
                 trust: 2,
                 affinity: 1,
                 respect: 0,
+                facade_affinity: None,
+                facade_respect: None,
             }],
             inventory: vec!["刀".into(), "面具".into()],
             goals: vec![],

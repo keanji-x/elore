@@ -222,6 +222,8 @@ mod tests {
             beliefs: vec![],
             desires: vec![],
             intentions: vec![],
+            intent_targets: vec![],
+            desire_tags: vec![],
             location: Some(location.into()),
             relationships: vec![],
             inventory: vec![],

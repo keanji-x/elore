@@ -36,7 +36,7 @@ pub use effect::beat::Beat;
 pub use effect::history::{History, HistoryEntry};
 pub use effect::op::Op;
 pub use input::card;
-pub use input::entity::{Character, Entity, Faction, Location};
+pub use input::entity::{Character, Entity, Faction, IntentTarget, Location};
 pub use input::goal::{Goal, GoalEntity, GoalStatus};
 pub use input::secret::{Secret, SecretsFileOut};
 pub use state::graph::WorldGraph;
@@ -47,6 +47,6 @@ pub use state::phase::{
 pub use state::phase_manager::ProjectState;
 pub use state::fact::FactSet;
 pub use state::program::Program;
-pub use state::reasoning::ReasoningResult;
+pub use state::reasoning::{ReasoningDiff, ReasoningResult};
 pub use state::rule::RuleSet;
 pub use state::snapshot::Snapshot;

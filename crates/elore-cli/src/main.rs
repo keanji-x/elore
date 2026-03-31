@@ -103,6 +103,31 @@ pub enum Command {
 
     /// 启发式断言分析，为 AI 提供下一步剧情动作和撰写建议
     Suggest,
+
+    // ── v6: Pack system ──────────────────────────────────────────
+    /// 扩展包管理 (list / info / install)
+    Pack {
+        #[command(subcommand)]
+        action: PackAction,
+    },
+}
+
+// ── Pack subcommands ────────────────────────────────────────────
+
+#[derive(Subcommand)]
+pub enum PackAction {
+    /// 列出所有可用的扩展包
+    List,
+    /// 查看扩展包详情
+    Info {
+        /// 扩展包名称或路径
+        name: String,
+    },
+    /// 安装扩展包到当前项目
+    Install {
+        /// 扩展包名称或路径
+        name: String,
+    },
 }
 
 // ── Add subcommands ──────────────────────────────────────────────
