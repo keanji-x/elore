@@ -17,10 +17,25 @@ use crate::input::goal::Goal;
 // ══════════════════════════════════════════════════════════════════
 
 /// A relationship edge to another entity.
+///
+/// Models interpersonal dynamics via three emotion axes (IPC + trust):
+/// - **trust** (信任): secret sharing, betrayal potential (-3 ~ +3)
+/// - **affinity** (亲疏): alliance, sacrifice, hostility (-3 ~ +3)
+/// - **respect** (敬畏): power dynamics, obedience, rebellion (-3 ~ +3)
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Relationship {
     pub target: String,
-    pub rel: String,
+    /// Social role label (e.g. "师徒", "死敌").
+    pub role: String,
+    /// Trust axis: -3 (deep distrust) to +3 (unconditional trust). Default 0.
+    #[serde(default)]
+    pub trust: i8,
+    /// Affinity axis: -3 (hatred) to +3 (devotion). Default 0.
+    #[serde(default)]
+    pub affinity: i8,
+    /// Respect axis: -3 (contempt) to +3 (reverence). Default 0.
+    #[serde(default)]
+    pub respect: i8,
 }
 
 /// Entity enum — each variant contains only its relevant fields.
@@ -216,7 +231,10 @@ impl Entity {
                     facts.push(format!("at({id}, {loc})."));
                 }
                 for r in &c.relationships {
-                    facts.push(format!("rel({id}, {}, {}).", r.target, quote(&r.rel)));
+                    facts.push(format!("role({id}, {}, {}).", r.target, quote(&r.role)));
+                    facts.push(format!("trust({id}, {}, {}).", r.target, r.trust));
+                    facts.push(format!("affinity({id}, {}, {}).", r.target, r.affinity));
+                    facts.push(format!("respect({id}, {}, {}).", r.target, r.respect));
                 }
                 for item in &c.inventory {
                     facts.push(format!("has({id}, {}).", quote(item)));
@@ -323,15 +341,31 @@ can_meet(?A, ?B) :- at(?A, ?P), at(?B, ?P), ?A != ?B, character(?A), character(?
 % Social: enemy detection (rival factions)
 enemy(?A, ?B) :- member(?A, ?S1), member(?B, ?S2), rival(?S1, ?S2), ?A != ?B.
 
-% Danger: enemies meeting
+% Social: personal enemy (affinity <= -2)
+personal_enemy(?A, ?B) :- affinity(?A, ?B, ?V), ?V <= -2, character(?A), character(?B).
+
+% Danger: enemies meeting (faction or personal)
 danger(?A, ?B) :- can_meet(?A, ?B), enemy(?A, ?B).
+danger(?A, ?B) :- can_meet(?A, ?B), personal_enemy(?A, ?B).
 
 % Location: reachable (transitive connections)
 reachable(?A, ?B) :- connected(?A, ?B).
 reachable(?A, ?C) :- connected(?A, ?B), reachable(?B, ?C).
 
 % Social: heard-of via relationships
-heard_of(?A, ?C) :- rel(?A, ?B, knows), rel(?B, ?C, knows), ?A != ?C.
+heard_of(?A, ?C) :- role(?A, ?B, ?R1), role(?B, ?C, ?R2), ?A != ?C.
+
+% Trust: would confide a secret (trust >= 2 + can meet)
+would_confide(?A, ?B) :- trust(?A, ?B, ?T), ?T >= 2, can_meet(?A, ?B).
+
+% Trust: would obey (respect >= 2)
+would_obey(?A, ?B) :- respect(?A, ?B, ?R), ?R >= 2.
+
+% Trust: would sacrifice (affinity >= 3 + trust >= 1)
+would_sacrifice(?A, ?B) :- affinity(?A, ?B, ?Af), ?Af >= 3, trust(?A, ?B, ?T), ?T >= 1.
+
+% Conflict: rebellion seed (low respect + low affinity)
+rebellion_seed(?Sub, ?Sup) :- respect(?Sub, ?Sup, ?R), ?R <= -1, affinity(?Sub, ?Sup, ?A), ?A <= -1.
 "#
 }
 

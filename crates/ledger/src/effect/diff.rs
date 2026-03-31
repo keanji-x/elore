@@ -187,8 +187,8 @@ fn diff_entity(old: &Entity, new: &Entity) -> EntityDiff {
         diff.added_beliefs = new_beliefs.difference(&old_beliefs).map(|s| (*s).clone()).collect();
         diff.removed_beliefs = old_beliefs.difference(&new_beliefs).map(|s| (*s).clone()).collect();
 
-        let old_rels: BTreeSet<(String, String)> = old_c.relationships.iter().map(|r| (r.target.clone(), r.rel.clone())).collect();
-        let new_rels: BTreeSet<(String, String)> = new_c.relationships.iter().map(|r| (r.target.clone(), r.rel.clone())).collect();
+        let old_rels: BTreeSet<(String, String)> = old_c.relationships.iter().map(|r| (r.target.clone(), r.role.clone())).collect();
+        let new_rels: BTreeSet<(String, String)> = new_c.relationships.iter().map(|r| (r.target.clone(), r.role.clone())).collect();
         diff.added_relationships = new_rels.difference(&old_rels).cloned().collect();
         diff.removed_relationships = old_rels.difference(&new_rels).cloned().collect();
 

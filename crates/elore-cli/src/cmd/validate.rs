@@ -9,7 +9,7 @@ pub async fn run(project: &Path, chapter: &str) -> Result<(), Box<dyn std::error
     let entities_dir = project.join(".everlore/entities");
     let everlore_dir = project.join(".everlore");
     let snap = Snapshot::build(chapter, &entities_dir, &everlore_dir)?;
-    let reasoning = ledger::run_reasoning(&snap).await?;
+    let reasoning = ledger::Program::from_snapshot(&snap, None).run().await?;
     let drama_node = drama::load_drama(&everlore_dir, chapter)?;
     let verdict = val::validate(&snap, &drama_node, Some(&reasoning));
 

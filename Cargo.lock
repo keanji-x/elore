@@ -1342,6 +1342,7 @@ checksum = "574b0cd5e90ee2ba03a66d0611fc9a09c9a0c28b2ecc2dc8a181dd31a53ca5d7"
 name = "ledger"
 version = "0.1.0"
 dependencies = [
+ "indexmap",
  "log",
  "nemo",
  "nemo-physical",

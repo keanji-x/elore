@@ -503,4 +503,169 @@ mod tests {
         assert!(facts.iter().any(|f| f.contains("want(kian,")));
         assert!(facts.iter().any(|f| f.contains("conflicts(kian,")));
     }
+
+    // ── Nested goal tree ────────────────────────────────────────
+
+    fn nested_goals() -> Vec<GoalEntity> {
+        vec![GoalEntity {
+            entity_type: "character".into(),
+            id: "lin_mo".into(),
+            name: Some("林默".into()),
+            goals: vec![Goal {
+                id: "become_strong".into(),
+                want: "变强".into(),
+                problem: Some("灵根太差".into()),
+                solution: None,
+                status: GoalStatus::Active,
+                blocked_by: vec![],
+                conflicts_with: vec![],
+                side_effects: vec![],
+                children: vec![
+                    Goal {
+                        id: "find_herb".into(),
+                        want: "找到洗髓草".into(),
+                        problem: Some("有妖兽守护".into()),
+                        solution: None,
+                        status: GoalStatus::Active,
+                        blocked_by: vec![],
+                        conflicts_with: vec![],
+                        side_effects: vec![],
+                        children: vec![],
+                    },
+                    Goal {
+                        id: "learn_sword".into(),
+                        want: "学会御剑术".into(),
+                        problem: None,
+                        solution: Some("师父教了".into()),
+                        status: GoalStatus::Resolved,
+                        blocked_by: vec![],
+                        conflicts_with: vec![],
+                        side_effects: vec![],
+                        children: vec![],
+                    },
+                ],
+            }],
+        }]
+    }
+
+    #[test]
+    fn nested_goals_datalog_emits_child_of() {
+        let entities = nested_goals();
+        let facts = goals_to_datalog(&entities);
+        let joined = facts.join("\n");
+        assert!(joined.contains("child_of(find_herb, become_strong)"));
+        assert!(joined.contains("child_of(learn_sword, become_strong)"));
+    }
+
+    #[test]
+    fn nested_goals_datalog_emits_has_solution() {
+        let entities = nested_goals();
+        let facts = goals_to_datalog(&entities);
+        let joined = facts.join("\n");
+        assert!(joined.contains("has_solution(lin_mo, learn_sword)"));
+        assert!(!joined.contains("has_solution(lin_mo, find_herb)"));
+    }
+
+    #[test]
+    fn nested_goals_datalog_emits_goal_problem() {
+        let entities = nested_goals();
+        let facts = goals_to_datalog(&entities);
+        let joined = facts.join("\n");
+        assert!(joined.contains("goal_problem(lin_mo, find_herb,"));
+    }
+
+    #[test]
+    fn suspense_only_active_without_solution() {
+        let entities = nested_goals();
+        let suspense = find_suspense(&entities);
+        // become_strong (active, no solution) + find_herb (active, no solution)
+        // learn_sword has solution → not suspense
+        let ids: Vec<&str> = suspense.iter().map(|fg| fg.goal.id.as_str()).collect();
+        assert!(ids.contains(&"become_strong"));
+        assert!(ids.contains(&"find_herb"));
+        assert!(!ids.contains(&"learn_sword"));
+    }
+
+    // ── Blocked / unblocked ─────────────────────────────────────
+
+    fn blocked_goals() -> Vec<GoalEntity> {
+        vec![
+            GoalEntity {
+                entity_type: "character".into(),
+                id: "kian".into(),
+                name: None,
+                goals: vec![Goal {
+                    id: "enter_city".into(),
+                    want: "进入城市".into(),
+                    problem: None,
+                    solution: None,
+                    status: GoalStatus::Blocked,
+                    blocked_by: vec!["guard/block_gate".into()],
+                    conflicts_with: vec![],
+                    side_effects: vec![],
+                    children: vec![],
+                }],
+            },
+            GoalEntity {
+                entity_type: "character".into(),
+                id: "guard".into(),
+                name: None,
+                goals: vec![Goal {
+                    id: "block_gate".into(),
+                    want: "守住城门".into(),
+                    problem: None,
+                    solution: None,
+                    status: GoalStatus::Failed,
+                    blocked_by: vec![],
+                    conflicts_with: vec![],
+                    side_effects: vec![],
+                    children: vec![],
+                }],
+            },
+        ]
+    }
+
+    #[test]
+    fn blocked_goals_datalog_emits_blocks() {
+        let entities = blocked_goals();
+        let facts = goals_to_datalog(&entities);
+        let joined = facts.join("\n");
+        assert!(joined.contains("blocks(guard, block_gate, kian, enter_city)"));
+    }
+
+    #[test]
+    fn find_unblocked_when_blocker_failed() {
+        let entities = blocked_goals();
+        let unblocked = find_unblocked(&entities);
+        assert_eq!(unblocked.len(), 1);
+        assert_eq!(unblocked[0].0.goal.id, "enter_city");
+    }
+
+    // ── Rendering ───────────────────────────────────────────────
+
+    #[test]
+    fn render_goal_tree_output() {
+        let entities = nested_goals();
+        let text = render_goal_tree(&entities[0]);
+        assert!(text.contains("lin_mo"));
+        assert!(text.contains("become_strong"));
+        assert!(text.contains("find_herb"));
+        assert!(text.contains("learn_sword"));
+        assert!(text.contains("✓")); // resolved icon
+    }
+
+    #[test]
+    fn render_plan_shows_suspense_and_conflicts() {
+        let entities = make_goal_entities();
+        let text = render_plan(&entities);
+        assert!(text.contains("悬念"));
+        assert!(text.contains("活跃冲突"));
+    }
+
+    #[test]
+    fn render_plan_empty_shows_no_situation() {
+        let entities: Vec<GoalEntity> = vec![];
+        let text = render_plan(&entities);
+        assert!(text.contains("无活跃态势"));
+    }
 }

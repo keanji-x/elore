@@ -76,7 +76,7 @@ pub async fn run(project: &Path, phase: Option<&str>) -> Result<(), Box<dyn std:
     }
 
     // Reasoning engine
-    let reasoning = ledger::run_reasoning(&snap).await?;
+    let reasoning = ledger::Program::from_snapshot(&snap, None).run().await?;
     if reasoning.total_facts > 0 {
         println!("\n{}", format!("推理引擎 ({} 推导事实):", reasoning.total_facts).blue().bold());
         if let Some(rows) = reasoning.get("can_meet") {

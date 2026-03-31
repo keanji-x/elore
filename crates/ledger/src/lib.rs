@@ -45,5 +45,8 @@ pub use state::phase::{
     PhaseStatus, PhaseType, WorldbuildingCounts,
 };
 pub use state::phase_manager::ProjectState;
-pub use state::reasoning::{ReasoningResult, run_reasoning};
+pub use state::fact::FactSet;
+pub use state::program::Program;
+pub use state::reasoning::ReasoningResult;
+pub use state::rule::RuleSet;
 pub use state::snapshot::Snapshot;

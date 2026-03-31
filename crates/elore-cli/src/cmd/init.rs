@@ -53,7 +53,10 @@ intentions: []
 location: sector_4
 relationships:
   - target: nova
-    rel: 前同事
+    role: 前同事
+    trust: 1
+    affinity: 1
+    respect: 0
 inventory: [电磁短刀]
 goals:
   - id: find_water
@@ -296,7 +299,10 @@ intentions: []
 location: example_location
 relationships:
   - target: another_char
-    rel: 同伴
+    role: 同伴
+    trust: 2
+    affinity: 2
+    respect: 1
 inventory: [长剑]
 tags:
   - active

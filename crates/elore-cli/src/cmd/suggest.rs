@@ -26,7 +26,7 @@ pub async fn run(project: &Path) -> Result<(), Box<dyn std::error::Error>> {
     )?;
 
     // ── Run reasoning engine ────────────────────────────────────
-    let reasoning = ledger::run_reasoning(&snapshot).await?;
+    let reasoning = ledger::Program::from_snapshot(&snapshot, None).run().await?;
 
     println!("{}", "═══ 🔮 叙事推理引擎 ═══".magenta().bold());
     println!("Phase: {}  |  推导事实: {}", phase_id.cyan(), reasoning.total_facts);

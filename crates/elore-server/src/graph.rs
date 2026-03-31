@@ -57,6 +57,12 @@ pub struct GraphEdge {
     pub edge_type: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trust: Option<i8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub affinity: Option<i8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub respect: Option<i8>,
 }
 
 #[derive(Serialize)]
@@ -110,7 +116,10 @@ pub fn build_graph(snapshot: &Snapshot) -> GraphResponse {
                         source: c.id.clone(),
                         target: r.target.clone(),
                         edge_type: "relationship".into(),
-                        label: Some(r.rel.clone()),
+                        label: Some(r.role.clone()),
+                        trust: Some(r.trust),
+                        affinity: Some(r.affinity),
+                        respect: Some(r.respect),
                     });
                 }
 
@@ -120,6 +129,9 @@ pub fn build_graph(snapshot: &Snapshot) -> GraphResponse {
                         target: loc.clone(),
                         edge_type: "location".into(),
                         label: None,
+                        trust: None,
+                        affinity: None,
+                        respect: None,
                     });
                 }
             }
@@ -145,6 +157,9 @@ pub fn build_graph(snapshot: &Snapshot) -> GraphResponse {
                             target: conn.clone(),
                             edge_type: "connection".into(),
                             label: None,
+                            trust: None,
+                            affinity: None,
+                            respect: None,
                         });
                     }
                 }
@@ -170,6 +185,9 @@ pub fn build_graph(snapshot: &Snapshot) -> GraphResponse {
                         target: f.id.clone(),
                         edge_type: "membership".into(),
                         label: None,
+                        trust: None,
+                        affinity: None,
+                        respect: None,
                     });
                 }
 
@@ -180,6 +198,9 @@ pub fn build_graph(snapshot: &Snapshot) -> GraphResponse {
                             target: r.clone(),
                             edge_type: "rivalry".into(),
                             label: None,
+                            trust: None,
+                            affinity: None,
+                            respect: None,
                         });
                     }
                 }
@@ -215,6 +236,9 @@ pub fn build_graph(snapshot: &Snapshot) -> GraphResponse {
                                 target: target_owner.to_string(),
                                 edge_type: "goal_conflict".into(),
                                 label: Some(format!("{my_want} vs {their_want}")),
+                                trust: None,
+                                affinity: None,
+                                respect: None,
                             });
                         }
                     }

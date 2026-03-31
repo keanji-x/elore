@@ -205,7 +205,10 @@ fn render_character(p: &mut String, c: &Entity, pov: Option<&str>) {
             let rels: Vec<String> = ch
                 .relationships
                 .iter()
-                .map(|r| format!("{}({})", r.rel, r.target))
+                .map(|r| {
+                    let axes = format!("T{}A{}R{}", r.trust, r.affinity, r.respect);
+                    format!("{}({}) [{}]", r.role, r.target, axes)
+                })
                 .collect();
             p.push_str(&format!("- 关系: {}\n", rels.join(", ")));
         }
@@ -294,7 +297,10 @@ mod tests {
                     location: Some("oasis_gate".into()),
                     relationships: vec![Relationship {
                         target: "nova".into(),
-                        rel: "wary".into(),
+                        role: "wary".into(),
+                        trust: -1,
+                        affinity: 0,
+                        respect: 0,
                     }],
                     inventory: vec!["电磁短刀".into()],
                     goals: vec![],

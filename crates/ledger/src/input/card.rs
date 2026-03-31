@@ -270,7 +270,10 @@ traits:
 location: sector_4
 relationships:
   - target: nova
-    rel: 前同事
+    role: 前同事
+    trust: 1
+    affinity: 1
+    respect: 0
 inventory:
   - 防毒面具
 ---
@@ -393,7 +396,10 @@ effects:
             location: Some("sector_4".into()),
             relationships: vec![Relationship {
                 target: "nova".into(),
-                rel: "前同事".into(),
+                role: "前同事".into(),
+                trust: 1,
+                affinity: 1,
+                respect: 0,
             }],
             inventory: vec![],
             goals: vec![],

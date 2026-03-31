@@ -76,7 +76,7 @@ pub async fn write_prompt(
         None
     };
 
-    let reasoning = ledger::run_reasoning(&snap).await?;
+    let reasoning = ledger::Program::from_snapshot(&snap, None).run().await?;
     let prompt = AuthorPrompt::build(
         &snap,
         &drama_node,
@@ -132,7 +132,7 @@ pub async fn run_pipeline(
     if let Some(p) = pov {
         drama_node.director_notes.pov = Some(p.to_string());
     }
-    let reasoning = ledger::run_reasoning(&snap).await?;
+    let reasoning = ledger::Program::from_snapshot(&snap, None).run().await?;
     let verdict = validate::validate(&snap, &drama_node, Some(&reasoning));
     println!("  {}", verdict.render());
 
