@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Elore - Relationship Graph</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="toolbar">
+    <h1>Elore</h1>
+    <div class="controls">
+      <label>Phase:
+        <select id="phase-select"></select>
+      </label>
+      <fieldset id="edge-filters">
+        <legend>Edges</legend>
+        <label><input type="checkbox" value="relationship" checked> Relationship</label>
+        <label><input type="checkbox" value="location" checked> Location</label>
+        <label><input type="checkbox" value="membership" checked> Membership</label>
+        <label><input type="checkbox" value="rivalry" checked> Rivalry</label>
+        <label><input type="checkbox" value="connection" checked> Connection</label>
+        <label><input type="checkbox" value="goal_conflict" checked> Goal Conflict</label>
+      </fieldset>
+      <fieldset id="secret-view">
+        <legend>Secrets</legend>
+        <label><input type="radio" name="secret-mode" value="reader" checked> Reader</label>
+        <label><input type="radio" name="secret-mode" value="omniscient"> Omniscient</label>
+      </fieldset>
+    </div>
+  </div>
+  <div id="main">
+    <div id="graph-container"></div>
+    <aside id="detail">
+      <h2 id="detail-title">Select a node</h2>
+      <div id="detail-body"></div>
+    </aside>
+  </div>
+  <script src="https://unpkg.com/three@0.160.1/build/three.min.js"></script>
+  <script src="https://unpkg.com/3d-force-graph@1.73.4/dist/3d-force-graph.min.js"></script>
+  <script src="https://unpkg.com/three-spritetext@1.8.2/dist/three-spritetext.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

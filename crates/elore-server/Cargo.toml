@@ -1,0 +1,18 @@
+[package]
+name = "elore-server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "elore-server"
+path = "src/main.rs"
+
+[dependencies]
+ledger = { workspace = true }
+axum = { workspace = true }
+tower-http = { workspace = true }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+open = { workspace = true }

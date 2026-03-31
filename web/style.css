@@ -1,0 +1,149 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: "SF Pro", "PingFang SC", system-ui, sans-serif;
+  background: #0a0a0f;
+  color: #e0e0e0;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ── Toolbar ─────────────────────────────────────────── */
+
+#toolbar {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 8px 16px;
+  background: #111118;
+  border-bottom: 1px solid #2a2a35;
+  flex-shrink: 0;
+  z-index: 10;
+}
+
+#toolbar h1 {
+  font-size: 16px;
+  font-weight: 600;
+  color: #8b8bff;
+  letter-spacing: 2px;
+}
+
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.controls label { font-size: 12px; }
+
+.controls select {
+  background: #1a1a25;
+  color: #e0e0e0;
+  border: 1px solid #3a3a4a;
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 12px;
+}
+
+fieldset {
+  border: 1px solid #2a2a35;
+  border-radius: 4px;
+  padding: 4px 8px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+fieldset legend {
+  font-size: 10px;
+  color: #888;
+  padding: 0 4px;
+}
+
+fieldset label {
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+/* ── Main layout ─────────────────────────────────────── */
+
+#main {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+  position: relative;
+}
+
+#graph-container {
+  flex: 1;
+  position: relative;
+}
+
+#graph-container canvas {
+  display: block;
+}
+
+/* ── Detail panel ────────────────────────────────────── */
+
+#detail {
+  width: 280px;
+  background: #111118;
+  border-left: 1px solid #2a2a35;
+  padding: 16px;
+  overflow-y: auto;
+  flex-shrink: 0;
+  z-index: 10;
+}
+
+#detail h2 {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 12px;
+  color: #ccc;
+}
+
+#detail-body {
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+#detail-body h3 {
+  font-size: 11px;
+  text-transform: uppercase;
+  color: #666;
+  margin-top: 12px;
+  margin-bottom: 4px;
+  letter-spacing: 1px;
+}
+
+#detail-body ul {
+  padding-left: 16px;
+}
+
+#detail-body .tag {
+  display: inline-block;
+  background: #1e1e30;
+  border: 1px solid #3a3a5a;
+  border-radius: 3px;
+  padding: 1px 6px;
+  margin: 2px;
+  font-size: 11px;
+}
+
+#detail-body .secret-card {
+  background: #1a1520;
+  border: 1px solid #3a2a4a;
+  border-radius: 4px;
+  padding: 8px;
+  margin-top: 6px;
+}
+
+#detail-body .secret-card .label {
+  font-size: 10px;
+  color: #a070c0;
+  text-transform: uppercase;
+}
