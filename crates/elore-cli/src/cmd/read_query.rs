@@ -69,7 +69,10 @@ pub fn read_snapshot(
                         let rels: Vec<_> = ch
                             .relationships
                             .iter()
-                            .map(|r| format!("{}({})", r.rel, r.target))
+                            .map(|r| {
+                                let axes = format!("T{}A{}R{}", r.trust, r.affinity, r.respect);
+                                format!("{}({}) [{}]", r.role, r.target, axes)
+                            })
                             .collect();
                         println!("    关系: {}", rels.join(", "));
                     }
@@ -187,7 +190,11 @@ fn snapshot_to_json(snap: &Snapshot) -> Value {
                         c.relationships
                             .iter()
                             .map(|r| json!({
-                                "target": r.target, "rel": r.rel
+                                "target": r.target,
+                                "role": r.role,
+                                "trust": r.trust,
+                                "affinity": r.affinity,
+                                "respect": r.respect,
                             }))
                             .collect::<Vec<_>>()
                     );

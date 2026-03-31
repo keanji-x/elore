@@ -145,7 +145,10 @@ mod tests {
             location: Some("the_spire".into()),
             relationships: vec![Relationship {
                 target: "nova".into(),
-                rel: "ally".into(),
+                role: "ally".into(),
+                trust: 2,
+                affinity: 2,
+                respect: 1,
             }],
             inventory: vec![],
             goals: vec![],

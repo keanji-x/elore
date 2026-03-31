@@ -50,7 +50,10 @@ intentions: []
 location: sector_4
 relationships:
   - target: nova
-    rel: 前同事
+    role: 前同事
+    trust: 1
+    affinity: 1
+    respect: 0
 inventory: [电磁短刀]
 goals:
   - id: find_water

@@ -94,7 +94,7 @@ fn evaluate_assertion(snapshot: &Snapshot, assertion: &StateAssertion) -> bool {
                         c.is_some_and(|c| {
                             c.relationships
                                 .iter()
-                                .any(|r| r.target == t || r.rel == t)
+                                .any(|r| r.target == t || r.role == t)
                         })
                     } else {
                         false
@@ -212,7 +212,10 @@ mod tests {
                     inventory: vec!["knife".into()],
                     relationships: vec![Relationship {
                         target: "nova".into(),
-                        rel: "hostile".into(),
+                        role: "hostile".into(),
+                        trust: -2,
+                        affinity: -2,
+                        respect: 0,
                     }],
                     beliefs: vec![],
                     desires: vec![],

@@ -135,11 +135,14 @@ impl Op {
                 if !c
                     .relationships
                     .iter()
-                    .any(|r| r.target == *target && r.rel == *rel)
+                    .any(|r| r.target == *target && r.role == *rel)
                 {
                     c.relationships.push(Relationship {
                         target: target.clone(),
-                        rel: rel.clone(),
+                        role: rel.clone(),
+                        trust: 0,
+                        affinity: 0,
+                        respect: 0,
                     });
                 }
             }
@@ -598,5 +601,347 @@ mod tests {
         let json = serde_json::to_string(&op).unwrap();
         let parsed: Op = serde_json::from_str(&json).unwrap();
         assert_eq!(op, parsed);
+    }
+
+    // ── Parse tests for all remaining variants ──────────────────
+
+    #[test]
+    fn parse_add_trait() {
+        let op = Op::parse("add_trait(kian, 坚韧)").unwrap();
+        assert_eq!(op, Op::AddTrait { entity: "kian".into(), value: "坚韧".into() });
+    }
+
+    #[test]
+    fn parse_remove_trait() {
+        let op = Op::parse("remove_trait(kian, 犹豫)").unwrap();
+        assert_eq!(op, Op::RemoveTrait { entity: "kian".into(), value: "犹豫".into() });
+    }
+
+    #[test]
+    fn parse_add_item() {
+        let op = Op::parse("add_item(kian, 长剑)").unwrap();
+        assert_eq!(op, Op::AddItem { entity: "kian".into(), item: "长剑".into() });
+    }
+
+    #[test]
+    fn parse_move() {
+        let op = Op::parse("move(kian, oasis)").unwrap();
+        assert_eq!(op, Op::Move { entity: "kian".into(), location: "oasis".into() });
+    }
+
+    #[test]
+    fn parse_remove_rel() {
+        let op = Op::parse("remove_rel(kian, nova)").unwrap();
+        assert_eq!(op, Op::RemoveRel { entity: "kian".into(), target: "nova".into() });
+    }
+
+    #[test]
+    fn parse_set_belief() {
+        let op = Op::parse("set_belief(kian, 世界是公平的, 世界是残酷的)").unwrap();
+        assert_eq!(op, Op::SetBelief { entity: "kian".into(), old: "世界是公平的".into(), new: "世界是残酷的".into() });
+    }
+
+    #[test]
+    fn parse_add_desire() {
+        let op = Op::parse("add_desire(kian, 复仇)").unwrap();
+        assert_eq!(op, Op::AddDesire { entity: "kian".into(), value: "复仇".into() });
+    }
+
+    #[test]
+    fn parse_remove_desire() {
+        let op = Op::parse("remove_desire(kian, 和平)").unwrap();
+        assert_eq!(op, Op::RemoveDesire { entity: "kian".into(), value: "和平".into() });
+    }
+
+    #[test]
+    fn parse_reveal_to_reader() {
+        let op = Op::parse("reveal_to_reader(dark_secret)").unwrap();
+        assert_eq!(op, Op::RevealToReader { secret: "dark_secret".into() });
+    }
+
+    #[test]
+    fn parse_fail_goal() {
+        let op = Op::parse("fail_goal(kian, escape)").unwrap();
+        assert_eq!(op, Op::FailGoal { owner: "kian".into(), goal_id: "escape".into() });
+    }
+
+    #[test]
+    fn parse_emerge_goal() {
+        let op = Op::parse("emerge_goal(kian, revenge, 为师父报仇)").unwrap();
+        assert_eq!(op, Op::EmergeGoal { owner: "kian".into(), goal_id: "revenge".into(), want: "为师父报仇".into(), problem: None });
+    }
+
+    #[test]
+    fn parse_unknown_op_errors() {
+        assert!(Op::parse("fly(kian)").is_err());
+    }
+
+    #[test]
+    fn parse_missing_args_errors() {
+        assert!(Op::parse("add_trait(kian)").is_err());
+        assert!(Op::parse("move()").is_err());
+    }
+
+    #[test]
+    fn parse_missing_parens_errors() {
+        assert!(Op::parse("add_trait kian brave").is_err());
+        assert!(Op::parse("move(kian, oasis").is_err());
+    }
+
+    // ── Apply tests for all entity mutation variants ─────────────
+
+    fn make_kian() -> Entity {
+        use crate::input::entity::Character;
+        Entity::Character(Character {
+            id: "kian".into(),
+            name: None,
+            traits: vec!["勇敢".into()],
+            beliefs: vec!["世界是公平的".into()],
+            desires: vec!["找水".into()],
+            intentions: vec![],
+            location: Some("wasteland".into()),
+            relationships: vec![Relationship {
+                target: "nova".into(),
+                role: "ally".into(),
+                trust: 2,
+                affinity: 1,
+                respect: 0,
+            }],
+            inventory: vec!["刀".into(), "面具".into()],
+            goals: vec![],
+            tags: vec![],
+            description: None,
+        })
+    }
+
+    #[test]
+    fn apply_add_trait() {
+        let mut e = make_kian();
+        let op = Op::AddTrait { entity: "kian".into(), value: "坚韧".into() };
+        assert!(op.apply_to_entity(&mut e));
+        assert!(e.as_character().unwrap().traits.contains(&"坚韧".to_string()));
+    }
+
+    #[test]
+    fn apply_add_trait_idempotent() {
+        let mut e = make_kian();
+        let op = Op::AddTrait { entity: "kian".into(), value: "勇敢".into() };
+        op.apply_to_entity(&mut e);
+        assert_eq!(e.as_character().unwrap().traits.iter().filter(|t| *t == "勇敢").count(), 1);
+    }
+
+    #[test]
+    fn apply_remove_trait() {
+        let mut e = make_kian();
+        let op = Op::RemoveTrait { entity: "kian".into(), value: "勇敢".into() };
+        assert!(op.apply_to_entity(&mut e));
+        assert!(!e.as_character().unwrap().traits.contains(&"勇敢".to_string()));
+    }
+
+    #[test]
+    fn apply_add_item() {
+        let mut e = make_kian();
+        let op = Op::AddItem { entity: "kian".into(), item: "盾".into() };
+        assert!(op.apply_to_entity(&mut e));
+        assert!(e.as_character().unwrap().inventory.contains(&"盾".to_string()));
+    }
+
+    #[test]
+    fn apply_move() {
+        let mut e = make_kian();
+        let op = Op::Move { entity: "kian".into(), location: "oasis".into() };
+        assert!(op.apply_to_entity(&mut e));
+        assert_eq!(e.as_character().unwrap().location.as_deref(), Some("oasis"));
+    }
+
+    #[test]
+    fn apply_add_rel() {
+        let mut e = make_kian();
+        let op = Op::AddRel { entity: "kian".into(), target: "elder".into(), rel: "师父".into() };
+        assert!(op.apply_to_entity(&mut e));
+        assert!(e.as_character().unwrap().relationships.iter().any(|r| r.target == "elder" && r.role == "师父"));
+    }
+
+    #[test]
+    fn apply_add_rel_no_duplicate() {
+        let mut e = make_kian();
+        let op = Op::AddRel { entity: "kian".into(), target: "nova".into(), rel: "ally".into() };
+        op.apply_to_entity(&mut e);
+        assert_eq!(e.as_character().unwrap().relationships.iter().filter(|r| r.target == "nova").count(), 1);
+    }
+
+    #[test]
+    fn apply_remove_rel() {
+        let mut e = make_kian();
+        let op = Op::RemoveRel { entity: "kian".into(), target: "nova".into() };
+        assert!(op.apply_to_entity(&mut e));
+        assert!(!e.as_character().unwrap().relationships.iter().any(|r| r.target == "nova"));
+    }
+
+    #[test]
+    fn apply_set_belief() {
+        let mut e = make_kian();
+        let op = Op::SetBelief { entity: "kian".into(), old: "世界是公平的".into(), new: "世界是残酷的".into() };
+        assert!(op.apply_to_entity(&mut e));
+        let c = e.as_character().unwrap();
+        assert!(c.beliefs.contains(&"世界是残酷的".to_string()));
+        assert!(!c.beliefs.contains(&"世界是公平的".to_string()));
+    }
+
+    #[test]
+    fn apply_set_belief_missing_old_adds_new() {
+        let mut e = make_kian();
+        let op = Op::SetBelief { entity: "kian".into(), old: "不存在的信念".into(), new: "新信念".into() };
+        assert!(op.apply_to_entity(&mut e));
+        assert!(e.as_character().unwrap().beliefs.contains(&"新信念".to_string()));
+    }
+
+    #[test]
+    fn apply_add_desire() {
+        let mut e = make_kian();
+        let op = Op::AddDesire { entity: "kian".into(), value: "复仇".into() };
+        assert!(op.apply_to_entity(&mut e));
+        assert!(e.as_character().unwrap().desires.contains(&"复仇".to_string()));
+    }
+
+    #[test]
+    fn apply_remove_desire() {
+        let mut e = make_kian();
+        let op = Op::RemoveDesire { entity: "kian".into(), value: "找水".into() };
+        assert!(op.apply_to_entity(&mut e));
+        assert!(!e.as_character().unwrap().desires.contains(&"找水".to_string()));
+    }
+
+    // ── Apply tests for secret ops ──────────────────────────────
+
+    #[test]
+    fn apply_reveal_to_secret() {
+        let mut secret = Secret {
+            id: "dark_truth".into(),
+            content: "some secret".into(),
+            known_by: vec!["elder".into()],
+            revealed_to_reader: false,
+            dramatic_function: None,
+        };
+        let op = Op::Reveal { secret: "dark_truth".into(), to: "kian".into() };
+        assert!(op.apply_to_secret(&mut secret));
+        assert!(secret.known_by.contains(&"kian".to_string()));
+    }
+
+    #[test]
+    fn apply_reveal_to_reader() {
+        let mut secret = Secret {
+            id: "dark_truth".into(),
+            content: "some secret".into(),
+            known_by: vec![],
+            revealed_to_reader: false,
+            dramatic_function: None,
+        };
+        let op = Op::RevealToReader { secret: "dark_truth".into() };
+        assert!(op.apply_to_secret(&mut secret));
+        assert!(secret.revealed_to_reader);
+    }
+
+    #[test]
+    fn apply_reveal_wrong_secret_ignored() {
+        let mut secret = Secret {
+            id: "other".into(),
+            content: "x".into(),
+            known_by: vec![],
+            revealed_to_reader: false,
+            dramatic_function: None,
+        };
+        let op = Op::Reveal { secret: "dark_truth".into(), to: "kian".into() };
+        assert!(!op.apply_to_secret(&mut secret));
+    }
+
+    // ── Apply tests for goal ops ────────────────────────────────
+
+    #[test]
+    fn apply_resolve_goal() {
+        use crate::input::goal::{Goal, GoalEntity, GoalStatus};
+        let mut ge = GoalEntity {
+            id: "kian".into(),
+            entity_type: "character".into(),
+            name: None,
+            goals: vec![Goal {
+                id: "survive".into(),
+                want: "活下去".into(),
+                problem: None,
+                solution: None,
+                status: GoalStatus::Active,
+                blocked_by: vec![],
+                conflicts_with: vec![],
+                side_effects: vec![],
+                children: vec![],
+            }],
+        };
+        let op = Op::ResolveGoal { owner: "kian".into(), goal_id: "survive".into(), solution: "找到了水".into() };
+        assert!(op.apply_to_goal(&mut ge));
+        assert_eq!(ge.goals[0].status, GoalStatus::Resolved);
+        assert_eq!(ge.goals[0].solution.as_deref(), Some("找到了水"));
+    }
+
+    #[test]
+    fn apply_fail_goal() {
+        use crate::input::goal::{Goal, GoalEntity, GoalStatus};
+        let mut ge = GoalEntity {
+            id: "kian".into(),
+            entity_type: "character".into(),
+            name: None,
+            goals: vec![Goal {
+                id: "escape".into(),
+                want: "逃走".into(),
+                problem: None,
+                solution: None,
+                status: GoalStatus::Active,
+                blocked_by: vec![],
+                conflicts_with: vec![],
+                side_effects: vec![],
+                children: vec![],
+            }],
+        };
+        let op = Op::FailGoal { owner: "kian".into(), goal_id: "escape".into() };
+        assert!(op.apply_to_goal(&mut ge));
+        assert_eq!(ge.goals[0].status, GoalStatus::Failed);
+    }
+
+    #[test]
+    fn apply_emerge_goal() {
+        use crate::input::goal::{GoalEntity, GoalStatus};
+        let mut ge = GoalEntity {
+            id: "kian".into(),
+            entity_type: "character".into(),
+            name: None,
+            goals: vec![],
+        };
+        let op = Op::EmergeGoal { owner: "kian".into(), goal_id: "revenge".into(), want: "报仇".into(), problem: Some("对手太强".into()) };
+        assert!(op.apply_to_goal(&mut ge));
+        assert_eq!(ge.goals.len(), 1);
+        assert_eq!(ge.goals[0].id, "revenge");
+        assert_eq!(ge.goals[0].status, GoalStatus::Active);
+        assert_eq!(ge.goals[0].problem.as_deref(), Some("对手太强"));
+    }
+
+    // ── Extract entity/secret IDs ───────────────────────────────
+
+    #[test]
+    fn extract_entities_from_add_rel() {
+        let op = Op::AddRel { entity: "a".into(), target: "b".into(), rel: "x".into() };
+        let ids = op.extract_entities();
+        assert!(ids.contains(&"a"));
+        assert!(ids.contains(&"b"));
+    }
+
+    #[test]
+    fn extract_secrets_from_reveal() {
+        let op = Op::Reveal { secret: "s1".into(), to: "kian".into() };
+        assert_eq!(op.extract_secrets(), vec!["s1"]);
+    }
+
+    #[test]
+    fn extract_secrets_from_non_secret_op() {
+        let op = Op::Move { entity: "kian".into(), location: "oasis".into() };
+        assert!(op.extract_secrets().is_empty());
     }
 }

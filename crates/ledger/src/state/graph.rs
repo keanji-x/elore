@@ -108,7 +108,7 @@ impl WorldGraph {
 
                     // Character relationships
                     for r in &c.relationships {
-                        let kind = EdgeKind::Rel(r.rel.clone());
+                        let kind = EdgeKind::Rel(r.role.clone());
                         edges.push(GraphEdge {
                             from: eid.clone(),
                             to: r.target.clone(),
@@ -349,7 +349,10 @@ mod tests {
                 location: Some("oasis".into()),
                 relationships: vec![Relationship {
                     target: "kian".into(),
-                    rel: "enemy".into(),
+                    role: "enemy".into(),
+                    trust: -3,
+                    affinity: -3,
+                    respect: 0,
                 }],
                 inventory: vec![],
                 goals: vec![],
