@@ -393,6 +393,8 @@ effects:
             beliefs: vec![],
             desires: vec![],
             intentions: vec![],
+            intent_targets: vec![],
+            desire_tags: vec![],
             location: Some("sector_4".into()),
             relationships: vec![Relationship {
                 target: "nova".into(),
@@ -400,6 +402,8 @@ effects:
                 trust: 1,
                 affinity: 1,
                 respect: 0,
+                facade_affinity: None,
+                facade_respect: None,
             }],
             inventory: vec![],
             goals: vec![],

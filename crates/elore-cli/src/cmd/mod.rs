@@ -3,6 +3,7 @@ mod build;
 mod generate;
 mod init;
 mod ingest;
+pub mod pack;
 mod phase;
 mod plan;
 mod read_query;
@@ -81,5 +82,12 @@ pub async fn dispatch(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         // v5: AI copilot tools
         crate::Command::LintDrafts => lint::run(&project),
         crate::Command::Suggest => suggest::run(&project).await,
+
+        // v6: pack system
+        crate::Command::Pack { action } => match action {
+            crate::PackAction::List => pack::list(&project),
+            crate::PackAction::Info { name } => pack::info(&project, &name),
+            crate::PackAction::Install { name } => pack::install(&project, &name),
+        },
     }
 }

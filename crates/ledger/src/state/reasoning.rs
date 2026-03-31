@@ -105,6 +105,96 @@ impl ReasoningResult {
 }
 
 // ══════════════════════════════════════════════════════════════════
+// Reasoning diff — what changed between two reasoning sessions
+// ══════════════════════════════════════════════════════════════════
+
+/// Diff between two reasoning results.
+#[derive(Debug, Clone, Default)]
+pub struct ReasoningDiff {
+    /// Facts that appeared (in `after` but not `before`).
+    pub emerged: HashMap<String, Vec<Vec<String>>>,
+    /// Facts that disappeared (in `before` but not `after`).
+    pub resolved: HashMap<String, Vec<Vec<String>>>,
+}
+
+impl ReasoningDiff {
+    /// Compute diff: what emerged and what resolved between two reasoning results.
+    pub fn diff(before: &ReasoningResult, after: &ReasoningResult) -> Self {
+        let mut emerged: HashMap<String, Vec<Vec<String>>> = HashMap::new();
+        let mut resolved: HashMap<String, Vec<Vec<String>>> = HashMap::new();
+
+        // Collect all predicate names from both
+        let mut all_preds: Vec<&String> = before.predicates.keys().collect();
+        for k in after.predicates.keys() {
+            if !all_preds.contains(&k) {
+                all_preds.push(k);
+            }
+        }
+
+        for pred in all_preds {
+            let before_rows = before.predicates.get(pred);
+            let after_rows = after.predicates.get(pred);
+
+            match (before_rows, after_rows) {
+                (None, Some(rows)) => {
+                    // All new
+                    emerged.insert(pred.clone(), rows.clone());
+                }
+                (Some(rows), None) => {
+                    // All gone
+                    resolved.insert(pred.clone(), rows.clone());
+                }
+                (Some(b), Some(a)) => {
+                    // Diff
+                    let new: Vec<Vec<String>> = a.iter()
+                        .filter(|row| !b.contains(row))
+                        .cloned()
+                        .collect();
+                    let gone: Vec<Vec<String>> = b.iter()
+                        .filter(|row| !a.contains(row))
+                        .cloned()
+                        .collect();
+                    if !new.is_empty() {
+                        emerged.insert(pred.clone(), new);
+                    }
+                    if !gone.is_empty() {
+                        resolved.insert(pred.clone(), gone);
+                    }
+                }
+                (None, None) => {}
+            }
+        }
+
+        Self { emerged, resolved }
+    }
+
+    /// True if nothing changed.
+    pub fn is_empty(&self) -> bool {
+        self.emerged.is_empty() && self.resolved.is_empty()
+    }
+
+    /// Count of all emerged facts.
+    pub fn emerged_count(&self) -> usize {
+        self.emerged.values().map(|v| v.len()).sum()
+    }
+
+    /// Count of all resolved facts.
+    pub fn resolved_count(&self) -> usize {
+        self.resolved.values().map(|v| v.len()).sum()
+    }
+
+    /// Get emerged facts for a specific predicate.
+    pub fn emerged_for(&self, predicate: &str) -> &[Vec<String>] {
+        self.emerged.get(predicate).map(|v| v.as_slice()).unwrap_or(&[])
+    }
+
+    /// Get resolved facts for a specific predicate.
+    pub fn resolved_for(&self, predicate: &str) -> &[Vec<String>] {
+        self.resolved.get(predicate).map(|v| v.as_slice()).unwrap_or(&[])
+    }
+}
+
+// ══════════════════════════════════════════════════════════════════
 // Reasoning engine
 // ══════════════════════════════════════════════════════════════════
 

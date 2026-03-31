@@ -185,6 +185,8 @@ mod tests {
                 beliefs: vec![],
                 desires: vec![],
                 intentions: vec![],
+                intent_targets: vec![],
+                desire_tags: vec![],
                 location: Some("wasteland".into()),
                 relationships: vec![],
                 inventory: vec![],

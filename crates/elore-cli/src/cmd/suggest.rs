@@ -46,12 +46,34 @@ pub async fn run(project: &Path) -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    if let Some(rows) = reasoning.get("danger") {
+    if let Some(rows) = reasoning.get("active_danger") {
         if !rows.is_empty() {
             has_possibilities = true;
-            println!("{}", "⚔ 危险遭遇（敌对势力成员同处一地）".red().bold());
+            println!("{}", "⚔ 危险遭遇（有主动敌意的角色相遇）".red().bold());
             for row in rows {
-                println!("  {} vs {}", row[0].red(), row[1].red());
+                println!("  {} → {}", row[0].red(), row[1].red());
+            }
+            println!();
+        }
+    }
+
+    if let Some(rows) = reasoning.get("armed_danger") {
+        if !rows.is_empty() {
+            has_possibilities = true;
+            println!("{}", "🔪 定向威胁（有明确攻击意图 + 能见面）".red().bold());
+            for row in rows {
+                println!("  {} → {}", row[0].red(), row[1].red());
+            }
+            println!();
+        }
+    }
+
+    if let Some(rows) = reasoning.get("protector") {
+        if !rows.is_empty() {
+            has_possibilities = true;
+            println!("{}", "🛡 守护者（愿意牺牲 + 保护对象正受威胁）".green().bold());
+            for row in rows {
+                println!("  {} 守护 {}", row[0].green(), row[1].green());
             }
             println!();
         }
@@ -73,10 +95,10 @@ pub async fn run(project: &Path) -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    if let Some(rows) = reasoning.get("possible_reveal") {
+    if let Some(rows) = reasoning.get("critical_reveal") {
         if !rows.is_empty() {
             has_possibilities = true;
-            println!("{}", "💬 揭秘时机（知情者与不知情者同处一地）".cyan().bold());
+            println!("{}", "💬 关键揭秘（高优先级信息传递）".cyan().bold());
             for row in rows {
                 println!(
                     "  {} 可向 {} 透露「{}」",

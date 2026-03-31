@@ -93,16 +93,36 @@ impl RuleSet {
             source: RuleSource::Builtin("entity"),
             text: ENTITY_RULES.to_string(),
             exports: vec![
+                "active_danger".into(),
+                "armed_danger".into(),
                 "can_meet".into(),
-                "enemy".into(),
-                "personal_enemy".into(),
                 "danger".into(),
-                "reachable".into(),
+                "enemy".into(),
                 "heard_of".into(),
+                "personal_bond".into(),
+                "personal_enemy".into(),
+                "protector".into(),
+                "reachable".into(),
+                "rebellion_seed".into(),
                 "would_confide".into(),
                 "would_obey".into(),
                 "would_sacrifice".into(),
-                "rebellion_seed".into(),
+            ],
+        });
+
+        rs.add(RuleEntry {
+            source: RuleSource::Builtin("social"),
+            text: SOCIAL_RULES.to_string(),
+            exports: vec![
+                "would_shield".into(),
+                "indirect_protector".into(),
+                "pressure_to_harm".into(),
+                "pressure_to_spare".into(),
+                "torn".into(),
+                "power_advantage".into(),
+                "must_submit".into(),
+                "deceiving".into(),
+                "deceived".into(),
             ],
         });
 
@@ -114,6 +134,15 @@ impl RuleSet {
                 "active_conflict".into(),
                 "unblocked".into(),
                 "would_unblock".into(),
+            ],
+        });
+
+        rs.add(RuleEntry {
+            source: RuleSource::Builtin("intent"),
+            text: INTENT_RULES.to_string(),
+            exports: vec![
+                "threatens".into(),
+                "plots_against".into(),
             ],
         });
 
@@ -130,6 +159,7 @@ impl RuleSet {
             text: NARRATIVE_RULES.to_string(),
             exports: vec![
                 "betrayal_opportunity".into(),
+                "critical_reveal".into(),
                 "possible_reveal".into(),
                 "info_cascade".into(),
                 "alliance_opportunity".into(),
@@ -200,19 +230,32 @@ impl RuleSet {
 const ENTITY_RULES: &str = r#"% Social: who can meet (same location)
 can_meet(?A, ?B) :- at(?A, ?P), at(?B, ?P), ?A != ?B, character(?A), character(?B).
 
-% Social: enemy detection (rival factions)
-enemy(?A, ?B) :- member(?A, ?S1), member(?B, ?S2), rival(?S1, ?S2), ?A != ?B.
+% Helper: personal bond (affinity >= 2, either direction) overrides faction rivalry
+personal_bond(?A, ?B) :- affinity(?A, ?B, ?V), ?V >= 2.
+
+% Social: enemy detection (rival factions, unless personal bond overrides)
+enemy(?A, ?B) :- member(?A, ?S1), member(?B, ?S2), rival(?S1, ?S2), ?A != ?B, ~personal_bond(?A, ?B), ~personal_bond(?B, ?A).
 
 % Social: personal enemy (affinity <= -2)
 personal_enemy(?A, ?B) :- affinity(?A, ?B, ?V), ?V <= -2, character(?A), character(?B).
 
-% Danger: enemies meeting (faction or personal)
+% Danger (background): faction enemies meeting — low signal, kept for completeness
 danger(?A, ?B) :- can_meet(?A, ?B), enemy(?A, ?B).
 danger(?A, ?B) :- can_meet(?A, ?B), personal_enemy(?A, ?B).
 
+% Armed danger: targeted threat (intent to harm + can meet)
+armed_danger(?Attacker, ?Target) :- threatens(?Attacker, ?Target), can_meet(?Attacker, ?Target).
+
+% Active danger: someone with specific hostile intent or personal hatred faces you
+active_danger(?A, ?B) :- armed_danger(?A, ?B).
+active_danger(?A, ?B) :- can_meet(?A, ?B), personal_enemy(?A, ?B).
+
+% Protection: would sacrifice + someone has armed_danger on the protectee
+protector(?Guardian, ?Protectee) :- would_sacrifice(?Guardian, ?Protectee), armed_danger(?Attacker, ?Protectee), ?Guardian != ?Attacker.
+
 % Location: reachable (transitive connections)
 reachable(?A, ?B) :- connected(?A, ?B).
-reachable(?A, ?C) :- connected(?A, ?B), reachable(?B, ?C).
+reachable(?A, ?C) :- connected(?A, ?B), reachable(?B, ?C), ?A != ?C.
 
 % Social: heard-of via relationships
 heard_of(?A, ?C) :- role(?A, ?B, ?R1), role(?B, ?C, ?R2), ?A != ?C.
@@ -258,6 +301,76 @@ would_unblock(?BOwner, ?BGoal, ?Owner, ?Goal) :-
   goal_status(?Owner, ?Goal, blocked).
 "#;
 
+const SOCIAL_RULES: &str = r#"% Indirect protection: A would sacrifice for C, C would sacrifice for B → A shields B
+would_shield(?A, ?B) :-
+  would_sacrifice(?A, ?C),
+  would_sacrifice(?C, ?B),
+  ?A != ?B.
+
+% Indirect protector: would_shield + target has armed_danger + can meet
+indirect_protector(?A, ?B) :-
+  would_shield(?A, ?B),
+  armed_danger(?Attacker, ?B),
+  can_meet(?A, ?B),
+  ?A != ?Attacker.
+
+% Pressure to harm: A obeys instigator, instigator threatens B, A can meet B
+pressure_to_harm(?A, ?B, ?Instigator) :-
+  would_obey(?A, ?Instigator),
+  threatens(?Instigator, ?B),
+  can_meet(?A, ?B),
+  ?A != ?B, ?A != ?Instigator.
+
+% Pressure to spare: A would sacrifice for pleader, pleader shields B
+pressure_to_spare(?A, ?B, ?Pleader) :-
+  would_sacrifice(?A, ?Pleader),
+  would_shield(?Pleader, ?B),
+  can_meet(?A, ?B),
+  ?A != ?B, ?A != ?Pleader.
+
+% Torn: simultaneous pressure to harm and to spare the same person
+torn(?A, ?B) :-
+  pressure_to_harm(?A, ?B, ?X),
+  pressure_to_spare(?A, ?B, ?Y),
+  ?X != ?Y.
+
+% Power advantage: faction strength >= 2x opponent
+power_advantage(?StrongF, ?WeakF) :-
+  strength(?StrongF, ?S1),
+  strength(?WeakF, ?S2),
+  rival(?StrongF, ?WeakF),
+  ?S1 >= ?S2 * 2.
+
+% Must submit: weaker faction member facing the rival faction's leader
+must_submit(?A, ?B) :-
+  member(?A, ?WeakF),
+  leader(?B, ?StrongF),
+  power_advantage(?StrongF, ?WeakF),
+  can_meet(?A, ?B).
+
+% Deception: real affinity negative + facade affinity positive
+deceiving(?A, ?B) :-
+  affinity(?A, ?B, ?Real), ?Real <= 0,
+  facade_affinity(?A, ?B, ?Fake), ?Fake >= 2.
+
+% Deceived: someone is deceiving you + you don't distrust them
+deceived(?B, ?A) :-
+  deceiving(?A, ?B),
+  trust(?B, ?A, ?T), ?T >= 0.
+
+% Deceived (fallback: no trust data → assumed deceived)
+deceived(?B, ?A) :-
+  deceiving(?A, ?B),
+  ~trust(?B, ?A, ?Any).
+"#;
+
+const INTENT_RULES: &str = r#"% Threat: intent_target fact (emitted by fact.rs when intent references an entity)
+threatens(?A, ?B) :- intent_target(?A, ?B), character(?A), character(?B).
+
+% Plots against: has a secret weapon against someone + threatens them
+plots_against(?A, ?B) :- threatens(?A, ?B), secret_known_by(?S, ?A), ~secret_known_by(?S, ?B).
+"#;
+
 const SECRET_RULES: &str = r#"% Dramatic irony: reader and some char know, but another char doesn't
 dramatic_irony(?Secret, ?Uninformed) :-
   secret_known_by(?Secret, ?Informed),
@@ -267,28 +380,47 @@ dramatic_irony(?Secret, ?Uninformed) :-
   ~secret_known_by(?Secret, ?Uninformed).
 "#;
 
-const NARRATIVE_RULES: &str = r#"% 背叛时机：知道秘密 + 不信任 + 能见面
+const NARRATIVE_RULES: &str = r#"% 背叛时机（强）：持有秘密 + 对受害者有敌意(affinity <= -1) + 能见面
 betrayal_opportunity(?Plotter, ?Victim, ?Secret) :-
   secret_known_by(?Secret, ?Plotter),
   ~secret_known_by(?Secret, ?Victim),
-  trust(?Plotter, ?Victim, ?T), ?T <= -1,
+  affinity(?Plotter, ?Victim, ?Af), ?Af <= -1,
   can_meet(?Plotter, ?Victim),
   character(?Victim).
 
-% 背叛时机（弱）：知道秘密 + 能见面（无信任数据时的回退）
+% 背叛时机（信任型）：受害者信任施害者(trust >= 1) + 施害者不信任受害者(trust <= 0) + 能见面
 betrayal_opportunity(?Plotter, ?Victim, ?Secret) :-
   secret_known_by(?Secret, ?Plotter),
   ~secret_known_by(?Secret, ?Victim),
+  trust(?Victim, ?Plotter, ?VT), ?VT >= 1,
+  trust(?Plotter, ?Victim, ?PT), ?PT <= 0,
   can_meet(?Plotter, ?Victim),
-  character(?Victim),
-  ~trust(?Plotter, ?Victim, ?Any).
+  character(?Victim).
 
-% 揭秘时机：知情者与不知情者在同一地点
+% 揭秘时机（完整）：知情者与不知情者在同一地点
 possible_reveal(?Secret, ?Informed, ?Uninformed) :-
   secret_known_by(?Secret, ?Informed),
   ~secret_known_by(?Secret, ?Uninformed),
   can_meet(?Informed, ?Uninformed),
   character(?Uninformed).
+
+% 关键揭秘：对受威胁者的预警（知情者不是敌人才会告知）
+critical_reveal(?Secret, ?Informed, ?Target) :-
+  possible_reveal(?Secret, ?Informed, ?Target),
+  plots_against(?Plotter, ?Target),
+  secret_known_by(?Secret, ?Plotter),
+  ~enemy(?Informed, ?Target).
+
+% 关键揭秘：对同盟的预警（知情者信任不知情者）
+critical_reveal(?Secret, ?Informed, ?Ally) :-
+  possible_reveal(?Secret, ?Informed, ?Ally),
+  trust(?Informed, ?Ally, ?T), ?T >= 1,
+  ~enemy(?Informed, ?Ally).
+
+% 关键揭秘：向上级汇报（不知情者是知情者 would_obey 的对象）
+critical_reveal(?Secret, ?Informed, ?Superior) :-
+  possible_reveal(?Secret, ?Informed, ?Superior),
+  would_obey(?Informed, ?Superior).
 
 % 信息级联：知情者能传给谁（信任 >= 1）
 info_cascade(?Secret, ?Bridge, ?Target) :-
@@ -297,14 +429,6 @@ info_cascade(?Secret, ?Bridge, ?Target) :-
   trust(?Bridge, ?Target, ?T), ?T >= 1,
   ~secret_known_by(?Secret, ?Target),
   character(?Target).
-
-% 信息级联（回退：无信任数据时）
-info_cascade(?Secret, ?Bridge, ?Target) :-
-  secret_known_by(?Secret, ?Bridge),
-  can_meet(?Bridge, ?Target),
-  ~secret_known_by(?Secret, ?Target),
-  character(?Target),
-  ~trust(?Bridge, ?Target, ?Any).
 
 % 联盟机会：共同欲望 + 正向亲和
 alliance_opportunity(?A, ?B, ?Want) :-
@@ -315,6 +439,18 @@ alliance_opportunity(?A, ?B, ?Want) :-
 % 联盟机会（回退：无亲和数据时）
 alliance_opportunity(?A, ?B, ?Want) :-
   desires(?A, ?Want), desires(?B, ?Want),
+  character(?A), character(?B), ?A != ?B,
+  ~affinity(?A, ?B, ?Any).
+
+% 联盟机会：共同 desire_tag
+alliance_opportunity(?A, ?B, ?Tag) :-
+  desire_tag(?A, ?Tag), desire_tag(?B, ?Tag),
+  character(?A), character(?B), ?A != ?B,
+  affinity(?A, ?B, ?V), ?V >= 0.
+
+% 联盟机会（回退：desire_tag 无亲和数据时）
+alliance_opportunity(?A, ?B, ?Tag) :-
+  desire_tag(?A, ?Tag), desire_tag(?B, ?Tag),
   character(?A), character(?B), ?A != ?B,
   ~affinity(?A, ?B, ?Any).
 

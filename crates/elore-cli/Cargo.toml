@@ -16,6 +16,7 @@ evaluator = { workspace = true }
 clap = { workspace = true }
 colored = { workspace = true }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
 log = { workspace = true }
