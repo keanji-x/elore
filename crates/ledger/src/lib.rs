@@ -25,6 +25,7 @@
 
 pub mod effect;
 pub mod input;
+pub mod memory;
 pub mod state;
 
 mod error;

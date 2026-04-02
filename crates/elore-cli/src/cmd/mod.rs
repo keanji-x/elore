@@ -109,6 +109,23 @@ pub async fn dispatch(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             crate::PackAction::Info { name } => pack::info(&project, &name),
             crate::PackAction::Install { name } => pack::install(&project, &name),
         },
+
+        // Memory harness
+        crate::Command::Harness {
+            novel,
+            title,
+            roster,
+            discover,
+        } => {
+            let report = ledger::memory::harness::run(
+                &novel,
+                &title,
+                roster.as_deref(),
+                discover,
+            )?;
+            report.print_summary();
+            Ok(())
+        }
     }
 }
 

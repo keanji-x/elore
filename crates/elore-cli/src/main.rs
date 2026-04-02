@@ -118,6 +118,22 @@ pub enum Command {
         #[command(subcommand)]
         action: PackAction,
     },
+
+    // ── Memory harness ──────────────────────────────────────────
+    /// 记忆系统评估 — 加载小说并评估记忆质量
+    Harness {
+        /// 小说文本文件路径
+        novel: PathBuf,
+        /// 小说标题
+        #[arg(long, default_value = "未命名")]
+        title: String,
+        /// 角色名册文件 (YAML)
+        #[arg(long)]
+        roster: Option<PathBuf>,
+        /// 自动发现角色名 (最小出现频次)
+        #[arg(long)]
+        discover: Option<usize>,
+    },
 }
 
 // ── Read subcommands ────────────────────────────────────────────
