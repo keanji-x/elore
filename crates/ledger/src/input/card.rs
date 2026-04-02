@@ -11,6 +11,14 @@ use crate::effect::beat::Beat;
 use crate::effect::op::Op;
 use crate::input::entity::Entity;
 use crate::input::secret::Secret;
+use crate::state::content::Content;
+use crate::state::content_constraint::ContentConstraints;
+
+/// Returns true for `_template.md` files that should be skipped during loading.
+fn is_template(path: &Path) -> bool {
+    path.file_name()
+        .is_some_and(|name| name.to_string_lossy().starts_with('_'))
+}
 
 // ══════════════════════════════════════════════════════════════════
 // Frontmatter parsing
@@ -76,7 +84,7 @@ pub fn load_entity_cards(cards_dir: &Path) -> Result<Vec<(Entity, PathBuf)>, Led
         }
         for entry in std::fs::read_dir(&dir)? {
             let path = entry?.path();
-            if path.extension().is_some_and(|ext| ext == "md") {
+            if path.extension().is_some_and(|ext| ext == "md") && !is_template(&path) {
                 let entity = parse_entity_card(&path)?;
                 result.push((entity, path));
             }
@@ -101,7 +109,7 @@ pub fn load_secret_cards(cards_dir: &Path) -> Result<Vec<Secret>, LedgerError> {
     let mut secrets = Vec::new();
     for entry in std::fs::read_dir(&dir)? {
         let path = entry?.path();
-        if path.extension().is_some_and(|ext| ext == "md") {
+        if path.extension().is_some_and(|ext| ext == "md") && !is_template(&path) {
             let raw = std::fs::read_to_string(&path)?;
             let (yaml, _body) = split_frontmatter(&raw).ok_or_else(|| {
                 LedgerError::Parse(format!(
@@ -148,7 +156,7 @@ pub fn load_beat_cards(cards_dir: &Path, phase_id: &str) -> Result<Vec<Beat>, Le
     let mut paths: Vec<PathBuf> = Vec::new();
     for entry in std::fs::read_dir(&dir)? {
         let path = entry?.path();
-        if path.extension().is_some_and(|ext| ext == "md") {
+        if path.extension().is_some_and(|ext| ext == "md") && !is_template(&path) {
             paths.push(path);
         }
     }
@@ -195,6 +203,472 @@ pub fn load_beat_cards(cards_dir: &Path, phase_id: &str) -> Result<Vec<Beat>, Le
     }
 
     Ok(beats)
+}
+
+// ══════════════════════════════════════════════════════════════════
+// Content cards
+// ══════════════════════════════════════════════════════════════════
+
+/// Intermediate struct for content card frontmatter.
+///
+/// `id` and `parent` are derived from the directory structure, not from YAML.
+/// Each content node lives at `cards/content/{path}/root.md`, where
+/// `{path}` is the node's id and its parent directory is the parent node.
+#[derive(Debug, serde::Deserialize)]
+struct ContentFrontmatter {
+    #[serde(default = "default_content_order")]
+    order: u32,
+    #[serde(default)]
+    title: Option<String>,
+    #[serde(default)]
+    synopsis: Option<String>,
+    #[serde(default)]
+    effects: Vec<String>,
+    #[serde(default)]
+    constraints: ContentConstraints,
+    #[serde(default)]
+    main_role: Option<String>,
+    #[serde(default)]
+    style: Vec<String>,
+    #[serde(default)]
+    style_override: bool,
+    #[serde(default = "default_content_creator")]
+    created_by: String,
+}
+
+fn default_content_order() -> u32 {
+    1
+}
+
+fn default_content_creator() -> String {
+    "human".to_string()
+}
+
+/// Parse a single content card from raw Markdown.
+///
+/// `id` and `parent` are passed in from the directory structure, not parsed from YAML.
+fn parse_content_card_str(
+    raw: &str,
+    path: &Path,
+    id: String,
+    parent: Option<String>,
+) -> Result<Content, LedgerError> {
+    let (yaml, body) = split_frontmatter(raw).ok_or_else(|| {
+        LedgerError::Parse(format!(
+            "Content card missing frontmatter: {}",
+            path.display()
+        ))
+    })?;
+
+    let fm: ContentFrontmatter = serde_yaml::from_str(yaml).map_err(|e| {
+        LedgerError::Parse(format!(
+            "Content card parse error in {}: {e}",
+            path.display()
+        ))
+    })?;
+
+    let text = body.trim().to_string();
+    let word_count = Beat::count_words(&text);
+
+    let effects: Vec<Op> = fm
+        .effects
+        .iter()
+        .map(|s| {
+            Op::parse(s).map_err(|e| {
+                LedgerError::Parse(format!("Effect parse error in {}: {e}", path.display()))
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    Ok(Content {
+        id,
+        parent,
+        order: fm.order,
+        title: fm.title,
+        synopsis: fm.synopsis,
+        text,
+        effects,
+        word_count,
+        constraints: fm.constraints,
+        main_role: fm.main_role,
+        style: fm.style,
+        style_override: fm.style_override,
+        created_by: fm.created_by,
+        created_at: String::new(),
+    })
+}
+
+/// Reserved directory names that hold local entities, not child content nodes.
+const RESERVED_DIRS: &[&str] = &["characters", "locations", "factions", "secrets"];
+
+/// Load all content cards by recursively walking the directory tree.
+///
+/// The tree structure is encoded in the filesystem:
+/// - `cards/content/root.md` is the root node (id = "root")
+/// - `cards/content/act1/root.md` is a child (id = "act1", parent = "root")
+/// - `cards/content/act1/scene1/root.md` is a grandchild (id = "act1/scene1", parent = "act1")
+///
+/// Directories named `characters`, `locations`, `factions`, `secrets` are
+/// reserved for local entity cards and are not treated as content children.
+pub fn load_content_cards(cards_dir: &Path) -> Result<Vec<Content>, LedgerError> {
+    let content_dir = cards_dir.join("content");
+    if !content_dir.exists() {
+        return Ok(Vec::new());
+    }
+
+    let mut contents = Vec::new();
+    walk_content_tree(&content_dir, &content_dir, None, &mut contents)?;
+
+    // Sort by (parent, order, id) for deterministic processing
+    contents.sort_by(|a, b| {
+        a.parent
+            .cmp(&b.parent)
+            .then(a.order.cmp(&b.order))
+            .then(a.id.cmp(&b.id))
+    });
+
+    Ok(contents)
+}
+
+/// Recursively walk the content directory tree.
+///
+/// `base` is `cards/content/`, `dir` is the current directory being scanned,
+/// `parent_id` is the content id of the parent node (None for root).
+fn walk_content_tree(
+    base: &Path,
+    dir: &Path,
+    parent_id: Option<&str>,
+    results: &mut Vec<Content>,
+) -> Result<(), LedgerError> {
+    let root_md = dir.join("root.md");
+    if !root_md.exists() {
+        return Ok(());
+    }
+
+    // Derive id from relative path: cards/content/ → "root", cards/content/act1/ → "act1"
+    let id = if dir == base {
+        "root".to_string()
+    } else {
+        dir.strip_prefix(base)
+            .map_err(|e| LedgerError::Parse(format!("path error: {e}")))?
+            .to_string_lossy()
+            .replace('\\', "/") // normalize Windows paths
+    };
+
+    let raw = std::fs::read_to_string(&root_md)?;
+    let content = parse_content_card_str(
+        &raw,
+        &root_md,
+        id.clone(),
+        parent_id.map(String::from),
+    )?;
+    results.push(content);
+
+    // Recurse into subdirectories (skip reserved entity dirs)
+    let mut entries: Vec<_> = std::fs::read_dir(dir)?
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().is_dir())
+        .collect();
+    entries.sort_by_key(|e| e.file_name());
+
+    for entry in entries {
+        let name = entry.file_name();
+        let name_str = name.to_string_lossy();
+        if RESERVED_DIRS.contains(&name_str.as_ref()) {
+            continue;
+        }
+        walk_content_tree(base, &entry.path(), Some(&id), results)?;
+    }
+
+    Ok(())
+}
+
+/// Resolve the filesystem directory for a content node.
+///
+/// - `"root"` → `cards/content/`
+/// - `"act1"` → `cards/content/act1/`
+/// - `"act1/scene1"` → `cards/content/act1/scene1/`
+pub fn content_node_dir(cards_dir: &Path, content_id: &str) -> PathBuf {
+    let content_base = cards_dir.join("content");
+    if content_id == "root" {
+        content_base
+    } else {
+        content_base.join(content_id)
+    }
+}
+
+/// A draft file found in a content node's perspective directories.
+#[derive(Debug, Clone)]
+pub struct PovDraft {
+    /// Filename stem (e.g. "chen_yu", "lao_zheng_past", "street")
+    pub name: String,
+    /// Which category: pov, timeline, outsider
+    pub category: PovCategory,
+    /// Raw text content of the draft
+    pub text: String,
+    /// File path
+    pub path: PathBuf,
+}
+
+/// The three categories of perspective drafts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PovCategory {
+    /// Character subjective perspective
+    Pov,
+    /// Past/future timeline perspective
+    Timeline,
+    /// Bystander/object/external perspective
+    Outsider,
+}
+
+impl PovCategory {
+    pub fn dir_name(&self) -> &'static str {
+        match self {
+            Self::Pov => "pov",
+            Self::Timeline => "timeline",
+            Self::Outsider => "outsider",
+        }
+    }
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Pov => "角色视角",
+            Self::Timeline => "时间轴视角",
+            Self::Outsider => "路人视角",
+        }
+    }
+
+    pub const ALL: [PovCategory; 3] = [Self::Pov, Self::Timeline, Self::Outsider];
+}
+
+/// Summary of drafts per category.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct DraftSummary {
+    pub pov: Vec<String>,
+    pub timeline: Vec<String>,
+    pub outsider: Vec<String>,
+}
+
+impl DraftSummary {
+    pub fn total(&self) -> usize {
+        self.pov.len() + self.timeline.len() + self.outsider.len()
+    }
+
+    pub fn has_all_categories(&self) -> bool {
+        !self.pov.is_empty() && !self.timeline.is_empty() && !self.outsider.is_empty()
+    }
+}
+
+/// Load all perspective drafts for a content node.
+///
+/// Scans three subdirectories: `pov/`, `timeline/`, `outsider/`.
+/// Each `.md` file in those directories is a draft.
+pub fn load_pov_drafts(cards_dir: &Path, content_id: &str) -> Vec<PovDraft> {
+    let dir = content_node_dir(cards_dir, content_id);
+    let mut drafts = Vec::new();
+
+    for cat in PovCategory::ALL {
+        let sub = dir.join(cat.dir_name());
+        let Ok(entries) = std::fs::read_dir(&sub) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_file() {
+                continue;
+            }
+            if path.extension().and_then(|e| e.to_str()) != Some("md") {
+                continue;
+            }
+            let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
+                continue;
+            };
+            if stem.starts_with('_') {
+                continue;
+            }
+            if let Ok(text) = std::fs::read_to_string(&path) {
+                drafts.push(PovDraft {
+                    name: stem.to_string(),
+                    category: cat,
+                    text,
+                    path,
+                });
+            }
+        }
+    }
+
+    drafts.sort_by(|a, b| a.category.dir_name().cmp(a.category.dir_name()).then(a.name.cmp(&b.name)));
+    drafts
+}
+
+/// Build a summary of drafts per category.
+pub fn draft_summary(cards_dir: &Path, content_id: &str) -> DraftSummary {
+    let drafts = load_pov_drafts(cards_dir, content_id);
+    let mut summary = DraftSummary::default();
+    for d in drafts {
+        match d.category {
+            PovCategory::Pov => summary.pov.push(d.name),
+            PovCategory::Timeline => summary.timeline.push(d.name),
+            PovCategory::Outsider => summary.outsider.push(d.name),
+        }
+    }
+    summary
+}
+
+// ══════════════════════════════════════════════════════════════════
+// Progress tracking
+// ══════════════════════════════════════════════════════════════════
+
+const PROGRESS_FILE: &str = ".progress.json";
+
+/// Writing progress for a content node. Auto-recorded by CLI commands.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct Progress {
+    /// Entity IDs for which `context` was run
+    #[serde(default)]
+    pub context_checked: Vec<String>,
+
+    /// Whether `suggest` was run
+    #[serde(default)]
+    pub suggest_ran: bool,
+
+    /// Whether `read sibling` was run
+    #[serde(default)]
+    pub sibling_read: bool,
+
+    /// Whether `read parent` was run
+    #[serde(default)]
+    pub parent_read: bool,
+
+    /// Draft summary (auto-detected from files)
+    #[serde(default)]
+    pub drafts: DraftSummary,
+}
+
+impl Progress {
+    /// Load progress from the node directory. Returns default if not found.
+    pub fn load(cards_dir: &Path, content_id: &str) -> Self {
+        let dir = content_node_dir(cards_dir, content_id);
+        let path = dir.join(PROGRESS_FILE);
+        if !path.exists() {
+            return Self::default();
+        }
+        std::fs::read_to_string(&path)
+            .ok()
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_default()
+    }
+
+    /// Save progress to the node directory.
+    pub fn save(&self, cards_dir: &Path, content_id: &str) -> Result<(), crate::LedgerError> {
+        let dir = content_node_dir(cards_dir, content_id);
+        let path = dir.join(PROGRESS_FILE);
+        let json = serde_json::to_string_pretty(self)?;
+        std::fs::write(path, json)?;
+        Ok(())
+    }
+
+    /// Record that `context` was run for an entity.
+    pub fn record_context(&mut self, entity_id: &str) {
+        if !self.context_checked.contains(&entity_id.to_string()) {
+            self.context_checked.push(entity_id.to_string());
+        }
+    }
+
+    /// Record that `suggest` was run.
+    pub fn record_suggest(&mut self) {
+        self.suggest_ran = true;
+    }
+
+    /// Record that `read sibling` was run.
+    pub fn record_sibling(&mut self) {
+        self.sibling_read = true;
+    }
+
+    /// Record that `read parent` was run.
+    pub fn record_parent(&mut self) {
+        self.parent_read = true;
+    }
+
+    /// Sync draft summary from filesystem.
+    pub fn sync_drafts(&mut self, cards_dir: &Path, content_id: &str) {
+        self.drafts = draft_summary(cards_dir, content_id);
+    }
+
+    /// Reset progress (e.g., when re-activating a node).
+    pub fn reset(&mut self) {
+        *self = Self::default();
+    }
+}
+
+/// Load local entity cards for a specific content node.
+///
+/// Fractal layout: local cards live alongside `root.md` in the node directory:
+/// - `cards/content/act1/characters/*.md`
+/// - `cards/content/act1/locations/*.md`
+/// - `cards/content/act1/factions/*.md`
+pub fn load_local_entity_cards(
+    cards_dir: &Path,
+    content_id: &str,
+) -> Result<Vec<(Entity, PathBuf)>, LedgerError> {
+    let node_dir = content_node_dir(cards_dir, content_id);
+    if !node_dir.exists() {
+        return Ok(Vec::new());
+    }
+
+    let mut result = Vec::new();
+    for subdir in ["characters", "locations", "factions"] {
+        let dir = node_dir.join(subdir);
+        if !dir.exists() {
+            continue;
+        }
+        for entry in std::fs::read_dir(&dir)? {
+            let path = entry?.path();
+            if path.extension().is_some_and(|ext| ext == "md") && !is_template(&path) {
+                let entity = parse_entity_card(&path)?;
+                result.push((entity, path));
+            }
+        }
+    }
+
+    result.sort_by(|a, b| a.0.id().cmp(b.0.id()));
+    Ok(result)
+}
+
+/// Load local secret cards for a specific content node.
+///
+/// Fractal layout: `cards/content/act1/secrets/*.md`
+pub fn load_local_secret_cards(
+    cards_dir: &Path,
+    content_id: &str,
+) -> Result<Vec<Secret>, LedgerError> {
+    let node_dir = content_node_dir(cards_dir, content_id);
+    let dir = node_dir.join("secrets");
+    if !dir.exists() {
+        return Ok(Vec::new());
+    }
+
+    let mut secrets = Vec::new();
+    for entry in std::fs::read_dir(&dir)? {
+        let path = entry?.path();
+        if path.extension().is_some_and(|ext| ext == "md") && !is_template(&path) {
+            let raw = std::fs::read_to_string(&path)?;
+            let (yaml, _body) = split_frontmatter(&raw).ok_or_else(|| {
+                LedgerError::Parse(format!(
+                    "Secret card missing frontmatter: {}",
+                    path.display()
+                ))
+            })?;
+            let secret: Secret = serde_yaml::from_str(yaml).map_err(|e| {
+                LedgerError::Parse(format!("Secret card parse error in {}: {e}", path.display()))
+            })?;
+            secrets.push(secret);
+        }
+    }
+
+    secrets.sort_by(|a, b| a.id.cmp(&b.id));
+    Ok(secrets)
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -523,5 +997,136 @@ location: wasteland
         assert!(card_facts.contains(&"at(kian, wasteland).".to_string()));
         assert!(card_facts.iter().any(|f| f.contains("trait(kian,")));
         assert!(card_facts.iter().any(|f| f.contains("name(kian,")));
+    }
+
+    // ── Content card tests ──────────────────────────────────────
+
+    #[test]
+    fn parse_content_card_basic() {
+        let raw = r#"---
+order: 1
+title: "开场：荒野醒来"
+synopsis: "基安在荒野中醒来"
+effects:
+  - move(kian, wasteland)
+  - add_trait(kian, disoriented)
+---
+
+雨水顺着基安的衣领滑下。他记不清自己是怎么到这里的。
+"#;
+        let content = parse_content_card_str(
+            raw,
+            Path::new("test.md"),
+            "act1_opening".into(),
+            Some("root".into()),
+        )
+        .unwrap();
+        assert_eq!(content.id, "act1_opening");
+        assert_eq!(content.parent.as_deref(), Some("root"));
+        assert_eq!(content.order, 1);
+        assert_eq!(content.title.as_deref(), Some("开场：荒野醒来"));
+        assert_eq!(content.effects.len(), 2);
+        assert!(content.word_count > 0);
+        assert!(content.text.contains("雨水"));
+    }
+
+    #[test]
+    fn parse_content_card_root() {
+        let raw = r#"---
+title: "鸿门宴"
+synopsis: "一场生死攸关的宴席"
+---
+
+故事的开始。
+"#;
+        let content = parse_content_card_str(
+            raw,
+            Path::new("test.md"),
+            "root".into(),
+            None,
+        )
+        .unwrap();
+        assert_eq!(content.id, "root");
+        assert!(content.parent.is_none());
+        assert!(content.effects.is_empty());
+    }
+
+    #[test]
+    fn parse_content_card_with_constraints() {
+        let raw = r#"---
+order: 3
+constraints:
+  exit_state:
+    - query: kian.location
+      expected: the_spire
+  words: [500, 2000]
+---
+
+高潮部分的叙事。
+"#;
+        let content = parse_content_card_str(
+            raw,
+            Path::new("test.md"),
+            "climax".into(),
+            Some("root".into()),
+        )
+        .unwrap();
+        assert_eq!(content.constraints.exit_state.len(), 1);
+        assert_eq!(content.constraints.words, Some((500, 2000)));
+    }
+
+    #[test]
+    fn load_content_cards_from_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let cards_dir = dir.path();
+        let content_dir = cards_dir.join("content");
+        let act1_dir = content_dir.join("act1");
+        std::fs::create_dir_all(&act1_dir).unwrap();
+
+        // Root node: cards/content/root.md
+        let mut f = std::fs::File::create(content_dir.join("root.md")).unwrap();
+        write!(f, "---\ntitle: 故事\n---\n").unwrap();
+
+        // Child node: cards/content/act1/root.md
+        let mut f = std::fs::File::create(act1_dir.join("root.md")).unwrap();
+        write!(f, "---\norder: 1\n---\n第一幕。\n").unwrap();
+
+        let contents = load_content_cards(cards_dir).unwrap();
+        assert_eq!(contents.len(), 2);
+        // root has no parent (None sorts before Some)
+        assert!(contents[0].parent.is_none());
+        assert_eq!(contents[0].id, "root");
+        assert_eq!(contents[1].id, "act1");
+        assert_eq!(contents[1].parent.as_deref(), Some("root"));
+    }
+
+    #[test]
+    fn load_local_entity_cards_for_content() {
+        let dir = tempfile::tempdir().unwrap();
+        let cards_dir = dir.path();
+        // Fractal layout: cards/content/act1/characters/stranger.md
+        let local_chars = cards_dir
+            .join("content")
+            .join("act1")
+            .join("characters");
+        std::fs::create_dir_all(&local_chars).unwrap();
+
+        let mut f = std::fs::File::create(local_chars.join("stranger.md")).unwrap();
+        write!(
+            f,
+            "---\ntype: character\nid: stranger\nname: 陌生人\n---\n一个神秘的陌生人。\n"
+        )
+        .unwrap();
+
+        let entities = load_local_entity_cards(cards_dir, "act1").unwrap();
+        assert_eq!(entities.len(), 1);
+        assert_eq!(entities[0].0.id(), "stranger");
+    }
+
+    #[test]
+    fn load_local_entity_cards_empty_when_no_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let entities = load_local_entity_cards(dir.path(), "nonexistent").unwrap();
+        assert!(entities.is_empty());
     }
 }

@@ -6,7 +6,8 @@
 use std::path::Path;
 
 use crate::LedgerError;
-use crate::state::fact::{FactSet, collect_facts};
+use crate::effect::op::Op;
+use crate::state::fact::{FactSet, collect_facts, collect_facts_with_effects};
 use crate::state::reasoning::{ReasoningResult, reason};
 use crate::state::rule::RuleSet;
 use crate::state::snapshot::Snapshot;
@@ -27,6 +28,24 @@ impl Program {
     /// and optionally loading user rules from `cards_dir/rules/*.dl`.
     pub fn from_snapshot(snapshot: &Snapshot, cards_dir: Option<&Path>) -> Self {
         let facts = collect_facts(snapshot);
+        let mut rules = RuleSet::builtins();
+        if let Some(dir) = cards_dir {
+            rules.extend(RuleSet::load_user(dir));
+        }
+        Self { facts, rules }
+    }
+
+    /// Build a program with content effect facts for EMA-style reasoning.
+    ///
+    /// `pending_effects` — effects of the current active node (about to happen).
+    /// `history_effects` — `(node_id, effects)` pairs from committed nodes.
+    pub fn from_snapshot_with_effects(
+        snapshot: &Snapshot,
+        pending_effects: &[Op],
+        history_effects: &[(String, Vec<Op>)],
+        cards_dir: Option<&Path>,
+    ) -> Self {
+        let facts = collect_facts_with_effects(snapshot, pending_effects, history_effects);
         let mut rules = RuleSet::builtins();
         if let Some(dir) = cards_dir {
             rules.extend(RuleSet::load_user(dir));

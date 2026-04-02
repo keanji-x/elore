@@ -4,6 +4,8 @@
 //! It can be fully rebuilt from scratch at any time.
 
 pub mod constraint;
+pub mod content;
+pub mod content_constraint;
 pub mod fact;
 pub mod graph;
 pub mod phase;

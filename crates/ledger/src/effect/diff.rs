@@ -69,7 +69,7 @@ impl SnapshotDiff {
         }
 
         Self {
-            chapter: new.chapter.clone(),
+            chapter: new.position.clone(),
             added_entities: added,
             removed_entities: removed,
             entity_diffs,
@@ -263,7 +263,7 @@ mod tests {
     #[test]
     fn snapshot_diff_empty() {
         let snap = Snapshot {
-            chapter: "ch01".into(),
+            position: "ch01".into(),
             entities: vec![make_entity("kian", "wasteland", vec![])],
             secrets: vec![],
             goal_entities: vec![],

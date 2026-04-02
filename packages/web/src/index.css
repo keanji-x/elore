@@ -1,0 +1,69 @@
+@import "tailwindcss";
+
+/* ── Design tokens ─────────────────────────────────────── */
+:root {
+  --bg-base: #09090b;
+  --bg-surface: #0f0f13;
+  --bg-elevated: #18181d;
+  --bg-hover: #1e1e26;
+  --border: #27272a;
+  --border-subtle: #1e1e24;
+  --text-primary: #fafafa;
+  --text-secondary: #a1a1aa;
+  --text-muted: #71717a;
+  --accent: #6366f1;
+  --accent-muted: #4f46e5;
+  --accent-subtle: rgba(99, 102, 241, 0.12);
+  --character: #6366f1;
+  --location: #22c55e;
+  --faction: #f59e0b;
+  --danger: #ef4444;
+  --secret: #a855f7;
+  --radius: 8px;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: "Inter", "SF Pro", "PingFang SC", system-ui, -apple-system, sans-serif;
+  background: var(--bg-base);
+  color: var(--text-primary);
+  height: 100vh;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+#root {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Scrollbar ─────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover { background: #3f3f46; }
+
+/* ── React Flow overrides ──────────────────────────────── */
+.react-flow__background { background: var(--bg-base) !important; }
+.react-flow__minimap { border-radius: var(--radius); border: 1px solid var(--border); }
+.react-flow__controls {
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+}
+.react-flow__controls button {
+  background: var(--bg-elevated);
+  border-color: var(--border);
+  color: var(--text-secondary);
+  fill: var(--text-secondary);
+}
+.react-flow__controls button:hover {
+  background: var(--bg-hover);
+}
+.react-flow__attribution { display: none; }

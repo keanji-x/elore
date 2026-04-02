@@ -36,6 +36,7 @@ pub use effect::beat::Beat;
 pub use effect::history::{History, HistoryEntry};
 pub use effect::op::Op;
 pub use input::card;
+pub use input::card::{DraftSummary, PovCategory, PovDraft, Progress, draft_summary, load_pov_drafts};
 pub use input::entity::{Character, Entity, Faction, IntentTarget, Location};
 pub use input::goal::{Goal, GoalEntity, GoalStatus};
 pub use input::secret::{Secret, SecretsFileOut};
@@ -44,6 +45,8 @@ pub use state::phase::{
     ConstraintSource, DefinitionStatus, EvaluatorInput, Phase, PhaseConstraints, PhaseProgress,
     PhaseStatus, PhaseType, WorldbuildingCounts,
 };
+pub use state::content::{Content, ContentEntry, ContentRef, ContentStatus, ContentTree, check_slot_coverage, effective_main_role, effective_style, extract_context, extract_refs, strip_refs};
+pub use state::content_constraint::ContentConstraints;
 pub use state::phase_manager::ProjectState;
 pub use state::fact::FactSet;
 pub use state::program::Program;

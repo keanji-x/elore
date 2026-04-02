@@ -6,6 +6,7 @@
 
 use indexmap::IndexSet;
 
+use crate::effect::op::Op;
 use crate::input::entity::Entity;
 use crate::input::goal::GoalEntity;
 use crate::input::secret::Secret;
@@ -109,6 +110,200 @@ pub fn collect_facts(snapshot: &Snapshot) -> FactSet {
     emit_goal_facts(&mut facts, &snapshot.goal_entities);
     emit_secret_facts(&mut facts, &snapshot.secrets);
     facts
+}
+
+/// Generate facts from a snapshot + content effects for EMA-style reasoning.
+///
+/// `pending_effects` are the effects of the current (active) content node —
+/// events that are about to happen. `history_effects` are effects from
+/// already-committed nodes — events that already happened.
+pub fn collect_facts_with_effects(
+    snapshot: &Snapshot,
+    pending_effects: &[Op],
+    history_effects: &[(String, Vec<Op>)],
+) -> FactSet {
+    let mut facts = collect_facts(snapshot);
+    emit_effect_facts(&mut facts, pending_effects, history_effects);
+    facts
+}
+
+// ── Effect facts ───────────────────────────────────────────────
+
+/// Emit Datalog facts from content effects.
+///
+/// Turns each Op into typed event facts that EMA rules can reason about:
+/// - `pending_event(type, arg1, arg2)` — effects about to happen
+/// - `past_event(node, type, arg1, arg2)` — effects that already happened
+/// - `affects_goal(event_key, char, goal)` — links events to goals (derived by rules)
+fn emit_effect_facts(
+    f: &mut FactSet,
+    pending: &[Op],
+    history: &[(String, Vec<Op>)],
+) {
+    // Pending effects (current node) — what's about to happen
+    for op in pending {
+        emit_op_as_event(f, "pending_event", op);
+    }
+
+    // Historical effects — what already happened
+    for (node_id, ops) in history {
+        for op in ops {
+            emit_op_as_past_event(f, node_id, op);
+        }
+    }
+}
+
+/// Emit a single Op as a pending event fact.
+fn emit_op_as_event(f: &mut FactSet, predicate: &str, op: &Op) {
+    match op {
+        Op::Reveal { secret, to } => {
+            f.add(predicate, vec![
+                Arg::Id("reveal".into()),
+                Arg::Id(secret.clone()),
+                Arg::Id(to.clone()),
+            ]);
+        }
+        Op::RevealToReader { secret } => {
+            f.add(predicate, vec![
+                Arg::Id("reveal_to_reader".into()),
+                Arg::Id(secret.clone()),
+                Arg::Id("reader".into()),
+            ]);
+        }
+        Op::AddTrait { entity, value } => {
+            f.add(predicate, vec![
+                Arg::Id("add_trait".into()),
+                Arg::Id(entity.clone()),
+                Arg::auto(value),
+            ]);
+        }
+        Op::RemoveTrait { entity, value } => {
+            f.add(predicate, vec![
+                Arg::Id("remove_trait".into()),
+                Arg::Id(entity.clone()),
+                Arg::auto(value),
+            ]);
+        }
+        Op::Move { entity, location } => {
+            f.add(predicate, vec![
+                Arg::Id("move".into()),
+                Arg::Id(entity.clone()),
+                Arg::Id(location.clone()),
+            ]);
+        }
+        Op::AddItem { entity, item } => {
+            f.add(predicate, vec![
+                Arg::Id("add_item".into()),
+                Arg::Id(entity.clone()),
+                Arg::auto(item),
+            ]);
+        }
+        Op::RemoveItem { entity, item } => {
+            f.add(predicate, vec![
+                Arg::Id("remove_item".into()),
+                Arg::Id(entity.clone()),
+                Arg::auto(item),
+            ]);
+        }
+        Op::SetBelief { entity, old, new } => {
+            f.add(predicate, vec![
+                Arg::Id("set_belief".into()),
+                Arg::Id(entity.clone()),
+                Arg::auto(old),
+            ]);
+            f.add(predicate, vec![
+                Arg::Id("set_belief".into()),
+                Arg::Id(entity.clone()),
+                Arg::auto(new),
+            ]);
+        }
+        Op::AddDesire { entity, value } => {
+            f.add(predicate, vec![
+                Arg::Id("add_desire".into()),
+                Arg::Id(entity.clone()),
+                Arg::auto(value),
+            ]);
+        }
+        Op::RemoveDesire { entity, value } => {
+            f.add(predicate, vec![
+                Arg::Id("remove_desire".into()),
+                Arg::Id(entity.clone()),
+                Arg::auto(value),
+            ]);
+        }
+        Op::AddRel { entity, target, rel } => {
+            f.add(predicate, vec![
+                Arg::Id("add_rel".into()),
+                Arg::Id(entity.clone()),
+                Arg::Id(target.clone()),
+            ]);
+            // Also emit the relationship type
+            f.add("event_rel_type", vec![
+                Arg::Id(entity.clone()),
+                Arg::Id(target.clone()),
+                Arg::auto(rel),
+            ]);
+        }
+        Op::RemoveRel { entity, target } => {
+            f.add(predicate, vec![
+                Arg::Id("remove_rel".into()),
+                Arg::Id(entity.clone()),
+                Arg::Id(target.clone()),
+            ]);
+        }
+        Op::ResolveGoal { owner, goal_id, .. } => {
+            f.add(predicate, vec![
+                Arg::Id("resolve_goal".into()),
+                Arg::Id(owner.clone()),
+                Arg::auto(goal_id),
+            ]);
+        }
+        Op::FailGoal { owner, goal_id } => {
+            f.add(predicate, vec![
+                Arg::Id("fail_goal".into()),
+                Arg::Id(owner.clone()),
+                Arg::auto(goal_id),
+            ]);
+        }
+        Op::EmergeGoal { owner, goal_id, .. } => {
+            f.add(predicate, vec![
+                Arg::Id("emerge_goal".into()),
+                Arg::Id(owner.clone()),
+                Arg::auto(goal_id),
+            ]);
+        }
+    }
+}
+
+/// Emit a single Op as a past event fact (with node context).
+fn emit_op_as_past_event(f: &mut FactSet, node_id: &str, op: &Op) {
+    // Emit as past_event with same structure
+    emit_op_as_event(f, "past_event", op);
+    // Also emit node attribution
+    let op_type = match op {
+        Op::Reveal { .. } => "reveal",
+        Op::RevealToReader { .. } => "reveal_to_reader",
+        Op::AddTrait { .. } => "add_trait",
+        Op::RemoveTrait { .. } => "remove_trait",
+        Op::Move { .. } => "move",
+        Op::AddItem { .. } => "add_item",
+        Op::RemoveItem { .. } => "remove_item",
+        Op::SetBelief { .. } => "set_belief",
+        Op::AddDesire { .. } => "add_desire",
+        Op::RemoveDesire { .. } => "remove_desire",
+        Op::AddRel { .. } => "add_rel",
+        Op::RemoveRel { .. } => "remove_rel",
+        Op::ResolveGoal { .. } => "resolve_goal",
+        Op::FailGoal { .. } => "fail_goal",
+        Op::EmergeGoal { .. } => "emerge_goal",
+    };
+    if let Some(entity) = op.entity_id() {
+        f.add("event_at_node", vec![
+            Arg::auto(node_id),
+            Arg::Id(op_type.into()),
+            Arg::Id(entity.into()),
+        ]);
+    }
 }
 
 // ── Entity facts ────────────────────────────────────────────────

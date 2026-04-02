@@ -19,6 +19,7 @@ use ledger::card;
 use ledger::effect::history::History;
 use ledger::input::card_writer;
 use ledger::input::secret;
+use ledger::state::content::ContentTree;
 use ledger::state::phase::Phase;
 use ledger::state::phase_manager::ProjectState;
 
@@ -120,6 +121,10 @@ pub fn run(project: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let mut state = ProjectState::load(&everlore);
 
     for phase_id in &all_phase_ids {
+        // Register phase in state even if it has no beats yet,
+        // so that plan/current_phase can be populated.
+        let entry = state.phases.entry(phase_id.clone()).or_default();
+
         let beats = card::load_beat_cards(&cards_dir, phase_id)?;
         if beats.is_empty() {
             continue;
@@ -138,12 +143,10 @@ pub fn run(project: &Path) -> Result<(), Box<dyn std::error::Error>> {
         let entries = Beat::to_history_entries(&beats);
         all_history_entries.extend(entries);
 
-        // Update state
-        if let Some(entry) = state.phases.get_mut(phase_id) {
-            entry.beats = phase_beats;
-            entry.words = phase_words;
-            entry.effects = phase_effects;
-        }
+        // Update state counts
+        entry.beats = phase_beats;
+        entry.words = phase_words;
+        entry.effects = phase_effects;
 
         total_beats += phase_beats;
         total_words += phase_words;
@@ -172,6 +175,14 @@ pub fn run(project: &Path) -> Result<(), Box<dyn std::error::Error>> {
         "✓".green(),
         all_history_entries.len()
     );
+
+    // Ensure plan and current_phase are populated.
+    if state.plan.is_empty() && !state.phases.is_empty() {
+        state.plan = state.phases.keys().cloned().collect();
+    }
+    if state.current_phase.is_none() {
+        state.current_phase = state.plan.first().cloned();
+    }
 
     // Save state
     state.save(&everlore)?;
@@ -229,16 +240,133 @@ pub fn run(project: &Path) -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    // ── Step 5: Content tree compilation ─────────────────────
+    let content_cards = card::load_content_cards(&cards_dir)?;
+    let content_count = content_cards.len();
+    if !content_cards.is_empty() {
+        let mut tree = ContentTree::load(&everlore);
+        let mut orders = std::collections::BTreeMap::new();
+        for c in &content_cards {
+            orders.insert(c.id.clone(), c.order);
+            tree.register(c);
+        }
+        tree.sort_children(&orders);
+        tree.resolve_locks();
+
+        // Validate stale nodes against current snapshot
+        let content_map: std::collections::BTreeMap<String, ledger::Content> = content_cards
+            .iter()
+            .map(|c| (c.id.clone(), c.clone()))
+            .collect();
+
+        let stale_ids: Vec<String> = tree
+            .nodes
+            .iter()
+            .filter(|(_, e)| e.stale && e.status == ledger::ContentStatus::Committed)
+            .map(|(id, _)| id.clone())
+            .collect();
+
+        let mut stale_failures: Vec<(String, Vec<String>)> = Vec::new();
+        for nid in &stale_ids {
+            let Some(content) = content_map.get(nid) else { continue };
+            let mut failures = Vec::new();
+
+            if !content.constraints.exit_state.is_empty() {
+                let is_branch = tree.is_branch(nid);
+                let snap_id = if is_branch {
+                    tree.subtree_leaves(nid).last().cloned().unwrap_or(nid.clone())
+                } else {
+                    nid.clone()
+                };
+                if let Ok(snapshot) = ledger::Snapshot::at_content(
+                    &snap_id, &tree, &content_map, &entities_dir, &cards_dir, &everlore,
+                ) {
+                    let (ok, errs) = ledger::state::constraint::check_assertions(
+                        &snapshot, &content.constraints.exit_state,
+                    );
+                    if !ok {
+                        failures.extend(errs);
+                    }
+                }
+            }
+
+            if failures.is_empty() {
+                if let Some(entry) = tree.nodes.get_mut(nid.as_str()) {
+                    entry.stale = false;
+                }
+            } else {
+                stale_failures.push((nid.clone(), failures));
+            }
+        }
+
+        tree.save(&everlore)?;
+
+        let content_effects: u32 = content_cards.iter().map(|c| c.effects.len() as u32).sum();
+        let content_words: u32 = content_cards.iter().map(|c| c.word_count).sum();
+
+        println!(
+            "  {} {} content nodes → content_tree.json ({} effects, {} 字)",
+            "✓".green(),
+            content_count,
+            content_effects,
+            content_words,
+        );
+
+        // Print tree structure
+        if let Some(ref root) = tree.root {
+            print_content_tree(&tree, root, 0);
+        }
+
+        // Report stale validation failures
+        if !stale_failures.is_empty() {
+            println!();
+            println!("{}", "  ⚠ stale 节点验证失败:".yellow().bold());
+            for (nid, failures) in &stale_failures {
+                println!("    {} — {}", nid.yellow(), failures.join(", "));
+            }
+        }
+    }
+
     // ── Summary ────────────────────────────────────────────────
     println!();
     println!(
-        "{} build 完成: {} entities, {} secrets, {} beats ({} 字)",
+        "{} build 完成: {} entities, {} secrets, {} beats ({} 字), {} content nodes",
         "✓".green().bold(),
         entities.len(),
         secrets.len(),
         total_beats,
         total_words,
+        content_count,
     );
 
     Ok(())
+}
+
+fn print_content_tree(tree: &ContentTree, node: &str, depth: usize) {
+    let indent = "  ".repeat(depth + 2);
+    let entry = tree.nodes.get(node);
+    let status = entry
+        .map(|e| match e.status {
+            ledger::ContentStatus::Locked => "🔒",
+            ledger::ContentStatus::Active => "🔵",
+            ledger::ContentStatus::Committed if e.stale => "⚠️",
+            ledger::ContentStatus::Committed => "✅",
+        })
+        .unwrap_or("?");
+    let prefix = if depth == 0 { "" } else { "├── " };
+    let version = entry.map(|e| e.version).unwrap_or(1);
+    let ver_str = if version > 1 {
+        format!(" v{version}")
+    } else {
+        String::new()
+    };
+    let stale_str = if entry.is_some_and(|e| e.stale) {
+        " (stale)".yellow().to_string()
+    } else {
+        String::new()
+    };
+    println!("{indent}{prefix}{status} {}{ver_str}{stale_str}", node.bold());
+    for child in tree.children_of(node) {
+        print_content_tree(tree, child, depth + 1);
+    }
 }

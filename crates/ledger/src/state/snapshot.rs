@@ -1,11 +1,15 @@
-//! World snapshot — frozen world state at a chapter boundary.
+//! World snapshot — frozen world state at a point in the narrative.
 //!
-//! `Snapshot = fold(genesis, effects_up_to_chapter)`
+//! `Snapshot = fold(genesis, effects_up_to_position)`
 //!
 //! A snapshot captures all entities, secrets, and goals at a specific point
 //! in the timeline. It is deterministic: the same genesis + effects always
 //! produce the same snapshot.
+//!
+//! In the content tree model, the snapshot is a **cursor** — it has a position
+//! in the tree and shows the world state at that position.
 
+use std::collections::BTreeMap;
 use std::path::Path;
 
 use crate::LedgerError;
@@ -16,22 +20,27 @@ use crate::input::goal;
 use crate::input::goal::GoalEntity;
 use crate::input::secret;
 use crate::input::secret::Secret;
+use crate::state::content::{Content, ContentTree};
 
 // ══════════════════════════════════════════════════════════════════
 // Data model
 // ══════════════════════════════════════════════════════════════════
 
-/// A frozen world state at a chapter boundary.
+/// A frozen world state at a point in the narrative.
+///
+/// In the content tree model, this is the **cursor** — positioned at a
+/// content node, showing the world state the agent sees.
 #[derive(Debug, Clone)]
 pub struct Snapshot {
-    pub chapter: String,
+    /// Position in the narrative (content id or chapter name).
+    pub position: String,
     pub entities: Vec<Entity>,
     pub secrets: Vec<Secret>,
     pub goal_entities: Vec<GoalEntity>,
 }
 
 // ══════════════════════════════════════════════════════════════════
-// Build
+// Build (legacy chapter-based)
 // ══════════════════════════════════════════════════════════════════
 
 impl Snapshot {
@@ -42,17 +51,13 @@ impl Snapshot {
         entities_dir: &Path,
         everlore_dir: &Path,
     ) -> Result<Self, LedgerError> {
-        // 1. Load genesis data
         let mut entities = entity::load_entities(entities_dir)?;
         let mut secrets = secret::load_secrets(everlore_dir)?;
-        // 2. Load full history and replay up to this chapter
         let history = History::load(everlore_dir);
         History::replay_entities(&mut entities, &history, Some(chapter));
         History::replay_secrets(&mut secrets, &history, Some(chapter));
 
-        // Extract goals from character cards (goals live in Character struct)
         let mut goals = goal::extract_goal_entities(&entities);
-        // Also load legacy YAML goal files for backward compat
         if let Ok(yaml_goals) = goal::load_goal_entities(entities_dir) {
             for yg in yaml_goals {
                 if !goals.iter().any(|g| g.id == yg.id) {
@@ -63,7 +68,7 @@ impl Snapshot {
         History::replay_goals(&mut goals, &history, Some(chapter));
 
         Ok(Self {
-            chapter: chapter.to_string(),
+            position: chapter.to_string(),
             entities,
             secrets,
             goal_entities: goals,
@@ -71,8 +76,6 @@ impl Snapshot {
     }
 
     /// Build a snapshot reflecting the world state BEFORE a chapter.
-    /// This is the correct state for narrating chapter N:
-    /// the world should reflect the end of chapter N-1.
     pub fn build_before(
         chapter: &str,
         entities_dir: &Path,
@@ -106,7 +109,7 @@ impl Snapshot {
         }
 
         Ok(Self {
-            chapter: chapter.to_string(),
+            position: chapter.to_string(),
             entities,
             secrets,
             goal_entities: goals,
@@ -115,13 +118,13 @@ impl Snapshot {
 
     /// Build from pre-loaded data (for testing or when data is already in memory).
     pub fn from_parts(
-        chapter: &str,
+        position: &str,
         entities: Vec<Entity>,
         secrets: Vec<Secret>,
         goal_entities: Vec<GoalEntity>,
     ) -> Self {
         Self {
-            chapter: chapter.to_string(),
+            position: position.to_string(),
             entities,
             secrets,
             goal_entities,
@@ -163,6 +166,175 @@ impl Snapshot {
             .filter(|e| e.is_faction())
             .collect()
     }
+
+    // ── Content tree cursor ─────────────────────────────────────
+
+    /// Cursor: world state BEFORE a content node's effects.
+    ///
+    /// This is what the agent sees when writing this node —
+    /// the world as it exists before any of this node's effects are applied.
+    pub fn before_content(
+        content_id: &str,
+        tree: &ContentTree,
+        contents: &BTreeMap<String, Content>,
+        entities_dir: &Path,
+        cards_dir: &Path,
+        everlore_dir: &Path,
+    ) -> Result<Self, LedgerError> {
+        if !tree.nodes.contains_key(content_id) {
+            return Err(LedgerError::NotFound(format!(
+                "Content '{content_id}' 不在内容树中"
+            )));
+        }
+        let path = tree.replay_path_before(content_id);
+        Self::build_from_replay_path(content_id, &path, tree, contents, entities_dir, cards_dir, everlore_dir)
+    }
+
+    /// Cursor: world state AFTER a content node's effects.
+    ///
+    /// This is used for commit validation — checking that the node's
+    /// effects produce the expected world state.
+    pub fn at_content(
+        content_id: &str,
+        tree: &ContentTree,
+        contents: &BTreeMap<String, Content>,
+        entities_dir: &Path,
+        cards_dir: &Path,
+        everlore_dir: &Path,
+    ) -> Result<Self, LedgerError> {
+        if !tree.nodes.contains_key(content_id) {
+            return Err(LedgerError::NotFound(format!(
+                "Content '{content_id}' 不在内容树中"
+            )));
+        }
+        let path = tree.replay_path(content_id);
+        Self::build_from_replay_path(content_id, &path, tree, contents, entities_dir, cards_dir, everlore_dir)
+    }
+
+    /// Shared replay logic for content tree snapshots.
+    ///
+    /// Replays ALL nodes in DFS path. For branch nodes, only applies
+    /// unclaimed effects (effects not covered by children's inherited_slots).
+    /// For leaf nodes, applies all effects. This ensures the snapshot is
+    /// always complete regardless of expansion progress.
+    fn build_from_replay_path(
+        position: &str,
+        path: &[String],
+        tree: &ContentTree,
+        contents: &BTreeMap<String, Content>,
+        entities_dir: &Path,
+        cards_dir: &Path,
+        everlore_dir: &Path,
+    ) -> Result<Self, LedgerError> {
+        // 1. Load genesis data
+        let mut entities = entity::load_entities(entities_dir)?;
+        let mut secrets = secret::load_secrets(everlore_dir)?;
+
+        // 2. For each node in path, merge local cards then apply effects
+        for node_id in path {
+            // Merge local entity cards
+            if let Ok(local_entities) =
+                crate::input::card::load_local_entity_cards(cards_dir, node_id)
+            {
+                for (local_entity, _path) in local_entities {
+                    if let Some(existing) = entities.iter_mut().find(|e| e.id() == local_entity.id())
+                    {
+                        *existing = local_entity;
+                    } else {
+                        entities.push(local_entity);
+                    }
+                }
+            }
+
+            // Merge local secret cards
+            if let Ok(local_secrets) =
+                crate::input::card::load_local_secret_cards(cards_dir, node_id)
+            {
+                for local_secret in local_secrets {
+                    if let Some(existing) = secrets.iter_mut().find(|s| s.id == local_secret.id) {
+                        *existing = local_secret;
+                    } else {
+                        secrets.push(local_secret);
+                    }
+                }
+            }
+
+            // Compute effective effects for this node
+            let effective_ops = Self::effective_effects(node_id, tree, contents);
+
+            for op in &effective_ops {
+                for entity in entities.iter_mut() {
+                    op.apply_to_entity(entity);
+                }
+                for secret in secrets.iter_mut() {
+                    op.apply_to_secret(secret);
+                }
+            }
+        }
+
+        // 3. Extract goals
+        let mut goals = goal::extract_goal_entities(&entities);
+        if let Ok(yaml_goals) = goal::load_goal_entities(entities_dir) {
+            for yg in yaml_goals {
+                if !goals.iter().any(|g| g.id == yg.id) {
+                    goals.push(yg);
+                }
+            }
+        }
+        // Replay goal effects along path
+        for node_id in path {
+            let effective_ops = Self::effective_effects(node_id, tree, contents);
+            for op in &effective_ops {
+                for ge in goals.iter_mut() {
+                    op.apply_to_goal(ge);
+                }
+            }
+        }
+
+        Ok(Self {
+            position: position.to_string(),
+            entities,
+            secrets,
+            goal_entities: goals,
+        })
+    }
+
+    /// Compute effective effects for a node during replay.
+    ///
+    /// - **Leaf**: all effects apply.
+    /// - **Branch**: only unclaimed effects apply (effects not in any child's inherited_slots).
+    ///
+    /// This ensures snapshots are always complete regardless of expansion progress.
+    fn effective_effects(
+        node_id: &str,
+        tree: &ContentTree,
+        contents: &BTreeMap<String, Content>,
+    ) -> Vec<crate::effect::op::Op> {
+        let Some(content) = contents.get(node_id) else {
+            return Vec::new();
+        };
+
+        if tree.is_leaf(node_id) {
+            // Leaf: apply all effects
+            return content.effects.clone();
+        }
+
+        // Branch: apply only unclaimed effects
+        // An effect is "claimed" if it appears in any child's effects list
+        let children_effects: Vec<&crate::effect::op::Op> = tree
+            .children_of(node_id)
+            .iter()
+            .filter_map(|child_id| contents.get(child_id.as_str()))
+            .flat_map(|c| c.effects.iter())
+            .collect();
+
+        content
+            .effects
+            .iter()
+            .filter(|op| !children_effects.contains(op))
+            .cloned()
+            .collect()
+    }
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -191,13 +363,13 @@ mod tests {
                 relationships: vec![],
                 inventory: vec![],
                 goals: vec![],
-            tags: vec![],
+                tags: vec![],
                 description: None,
             })],
             vec![],
             vec![],
         );
-        assert_eq!(snap.chapter, "ch01");
+        assert_eq!(snap.position, "ch01");
         assert!(snap.entity("kian").is_some());
         assert!(snap.entity("nova").is_none());
         assert_eq!(snap.characters().len(), 1);

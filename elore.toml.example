@@ -1,0 +1,15 @@
+# Elore Server 配置
+
+[server]
+host = "127.0.0.1"       # 监听地址
+port = 3000               # HTTP 端口
+data_dir = ".data"         # 数据目录 (项目在此目录下自动发现)
+open_browser = true        # 启动后自动打开浏览器
+cors = true                # 允许跨域
+
+# AI Agent 配置
+[agent]
+api_url = "https://api.anthropic.com"   # API 端点 (可换成兼容接口)
+api_key = ""                             # API Key (推荐用 ELORE_API_KEY 环境变量)
+model = "claude-sonnet-4-6-20250514"     # 模型 ID
+max_tokens = 4096                        # 单次生成最大 token
