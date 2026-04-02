@@ -29,7 +29,7 @@ pub struct ProjectState {
 }
 
 /// Runtime state for a single phase
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PhaseEntry {
     pub status: PhaseStatus,
 

@@ -202,7 +202,7 @@ mod tests {
 
     fn test_snapshot() -> Snapshot {
         Snapshot {
-            chapter: "test".into(),
+            position: "test".into(),
             entities: vec![
                 Entity::Character(Character {
                     id: "kian".into(),

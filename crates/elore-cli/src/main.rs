@@ -6,7 +6,7 @@ mod cmd;
 #[derive(Parser)]
 #[command(
     name = "elore",
-    about = "EverLore v3 — Phase-Driven Narrative Compiler",
+    about = "EverLore — Tree-Driven Narrative Compiler",
     version
 )]
 pub struct Cli {
@@ -20,11 +20,11 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Command {
-    // ── Project setup ────────────────────────────────────────────
+    // ── Project ──────────────────────────────────────────────────
     /// 初始化项目
     Init,
 
-    /// 创建实体 scaffold (人类使用)
+    /// 创建实体 scaffold
     New {
         #[arg(value_name = "TYPE")]
         entity_type: String,
@@ -34,81 +34,124 @@ pub enum Command {
         name: Option<String>,
     },
 
-    // ── AI write API ─────────────────────────────────────────────
-    /// AI 注入结构化数据 (不碰文件系统)
+    /// 编译 cards/ → .everlore/
+    Build,
+
+    // ── Content tree ─────────────────────────────────────────────
+    /// 查看内容树
+    Tree {
+        #[arg(long, default_value = "human")]
+        format: String,
+    },
+
+    /// 查看节点详情 (省略 id 则用当前 active)
+    Show {
+        id: Option<String>,
+        #[arg(long, default_value = "human")]
+        format: String,
+    },
+
+    /// 移动光标到一个节点（不改状态）
+    Activate {
+        id: String,
+    },
+
+    /// 编辑节点（创建 pov 目录、初始化 progress，committed 节点自动 v+1）
+    Edit {
+        id: String,
+    },
+
+    /// 提交节点 (省略 id 则用当前 active)
+    Commit {
+        id: Option<String>,
+    },
+
+    /// 查看节点 effects 对世界状态的影响 (before → after diff)
+    Diff {
+        id: Option<String>,
+    },
+
+    /// 查看世界快照 (省略 id 则用当前 active)
+    Snapshot {
+        id: Option<String>,
+        #[arg(long, default_value = "human")]
+        format: String,
+        #[arg(long)]
+        before: bool,
+    },
+
+    /// 阅读内容（聚合视图）
+    Read {
+        #[command(subcommand)]
+        mode: ReadMode,
+    },
+
+    /// 查看实体的叙事上下文（effects 关联 + 文本引用）
+    Context {
+        /// 实体 ID (character, location, secret, faction)。省略则用 main_role。
+        id: Option<String>,
+        /// 显示完整文本而非摘要
+        #[arg(long)]
+        full: bool,
+    },
+
+    // ── Output ───────────────────────────────────────────────────
+    /// 将内容树编译为可读的 Markdown 文档
+    Publish {
+        #[arg(long, short = 'o')]
+        output: Option<PathBuf>,
+    },
+
+    // ── AI API ───────────────────────────────────────────────────
+    /// AI 注入结构化数据
     Add {
         #[command(subcommand)]
         action: AddAction,
     },
 
-    // ── AI read API ──────────────────────────────────────────────
-    /// AI 查询世界状态 (结构化输出)
-    Read {
-        #[command(subcommand)]
-        action: ReadAction,
-    },
-
-    // ── Human workflow ───────────────────────────────────────────
-    /// 态势面板。优先使用 phase / 当前 active phase
-    Plan {
-        #[arg(long)]
-        phase: Option<String>,
-    },
-
-    /// 将所有 Beats 编译成可读的 Markdown 文档
-    Gen {
-        /// 输出文件路径 (省略则打印到 stdout)
-        #[arg(long, short = 'o')]
-        output: Option<PathBuf>,
-
-        /// 只包含指定的 Phase (可多次指定), 默认全部
-        #[arg(long = "phase")]
-        phases: Vec<String>,
-    },
-
-    /// 项目概览 (v3: 显示四层约束进度)
-    Status {
-        #[arg(long)]
-        phase: Option<String>,
-        #[arg(long, default_value = "human")]
-        format: String,
-    },
-
-    // ── v3: Phase lifecycle ───────────────────────────────────────
-    /// 切换到指定 phase
-    Checkout { phase_id: String },
-
-    /// 提交当前 phase 进入审阅
-    Submit,
-
-    /// 批准当前 phase
-    Approve,
-
-    /// 拒绝当前 phase (退回 active)
-    Reject { reason: String },
-
-    // ── v4: File-based workflow ───────────────────────────────────
-    /// 编译 cards/ → .everlore/ (entity cache, history, snapshots)
-    Build,
-
-    /// 从 drafts/ 编译 Markdown 为正式 beats
-    Ingest,
-
-    /// 从文件系统重建 history.jsonl 和 state.json
-    Sync,
-
-    // ── v5: AI Copilot Workflow ───────────────────────────────────
-    /// 对 drafts 里的 markdown 语法与前置 YAML 进行静态分析
-    LintDrafts,
-
-    /// 启发式断言分析，为 AI 提供下一步剧情动作和撰写建议
+    /// 启发式断言分析，为 AI 提供建议
     Suggest,
 
-    // ── v6: Pack system ──────────────────────────────────────────
-    /// 扩展包管理 (list / info / install)
+    // ── Pack system ──────────────────────────────────────────────
+    /// 扩展包管理
     Pack {
         #[command(subcommand)]
         action: PackAction,
+    },
+}
+
+// ── Read subcommands ────────────────────────────────────────────
+
+#[derive(Subcommand)]
+pub enum ReadMode {
+    /// 按深度聚合 synopsis（默认 depth=1，章节大纲）
+    Level {
+        #[arg(default_value = "1")]
+        depth: usize,
+    },
+    /// 叶子正文聚合，截止到指定节点（默认 active）
+    Leaf {
+        id: Option<String>,
+    },
+    /// 从根到指定节点的路径聚合（默认 active）
+    Path {
+        id: Option<String>,
+    },
+    /// 父节点概览：synopsis + 所有兄弟状态（默认 active）
+    Parent {
+        id: Option<String>,
+    },
+    /// 前序兄弟的尾部文本，用于衔接（默认 active）
+    Sibling {
+        id: Option<String>,
+    },
+    /// 查看 POV 草稿（默认 active 节点，可指定角色）
+    Pov {
+        /// 节点 ID（默认 active）
+        id: Option<String>,
+        /// 只看某个角色的草稿
+        #[arg(long)]
+        who: Option<String>,
     },
 }
 
@@ -116,96 +159,21 @@ pub enum Command {
 
 #[derive(Subcommand)]
 pub enum PackAction {
-    /// 列出所有可用的扩展包
     List,
-    /// 查看扩展包详情
-    Info {
-        /// 扩展包名称或路径
-        name: String,
-    },
-    /// 安装扩展包到当前项目
-    Install {
-        /// 扩展包名称或路径
-        name: String,
-    },
+    Info { name: String },
+    Install { name: String },
 }
 
-// ── Add subcommands ──────────────────────────────────────────────
+// ── Add subcommands ─────────────────────────────────────────────
 
 #[derive(Subcommand)]
 pub enum AddAction {
-    /// 注入/更新实体 (部分字段用默认值填充, 引用必须存在)
-    Entity {
-        /// JSON 字符串, id 为必填
-        json: String,
-    },
-    /// 注入/更新秘密 (id 和 content 为必填)
-    Secret {
-        /// JSON 字符串
-        json: String,
-    },
-
-    // ── v3 ──
-    /// 创建/注册 Phase 定义
-    Phase {
-        /// JSON 字符串, id 为必填
-        json: String,
-    },
-    /// 提交一个 Beat (text + effects)
-    Beat {
-        /// JSON 字符串, text 为必填
-        json: String,
-    },
-    /// 标注一个 Beat 的质量
-    Note {
-        /// JSON 字符串, beat + score 为必填
-        json: String,
-    },
-    /// 批量创建实体 (JSON array, 自动拓扑排序)
-    Entities {
-        /// JSON array 字符串, 每个元素的 id 为必填
-        json: String,
-    },
-}
-
-// ── Read subcommands ─────────────────────────────────────────────
-
-#[derive(Subcommand)]
-pub enum ReadAction {
-    /// 世界快照。参数语义为 phase_id，输出的是该 phase 截止当前的世界状态
-    Snapshot {
-        phase: String,
-        #[arg(long, default_value = "human")]
-        format: String,
-    },
-    /// 事件历史。参数语义为 phase_id
-    History {
-        #[arg(long)]
-        phase: Option<String>,
-        #[arg(long, default_value = "human")]
-        format: String,
-    },
-    // ── v3 ──
-    /// Phase 定义和约束。省略 --phase 时读取当前 active phase
-    Phase {
-        #[arg(long)]
-        phase: Option<String>,
-        #[arg(long, default_value = "human")]
-        format: String,
-    },
-    /// 当前 Phase 的所有 beats
-    Beats {
-        #[arg(long)]
-        phase: Option<String>,
-        #[arg(long, default_value = "human")]
-        format: String,
-    },
-    // ── v4 ──
-    /// 获取前一个 Beat 的结尾上下文片段，保持剧情连续性
-    PreviousBeat {
-        #[arg(long)]
-        phase: Option<String>,
-    },
+    /// 注入/更新实体
+    Entity { json: String },
+    /// 注入/更新秘密
+    Secret { json: String },
+    /// 批量创建实体
+    Entities { json: String },
 }
 
 #[tokio::main]

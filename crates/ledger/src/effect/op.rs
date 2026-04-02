@@ -302,6 +302,18 @@ impl Op {
         ids
     }
 
+    /// Extract ALL referenced IDs (entities, secrets, locations) from this effect.
+    /// Used for context indexing — any ID that appears in any field.
+    pub fn all_referenced_ids(&self) -> Vec<&str> {
+        let mut ids = self.extract_entities();
+        ids.extend(self.extract_secrets());
+        // Also capture location targets from Move
+        if let Self::Move { location, .. } = self {
+            ids.push(location.as_str());
+        }
+        ids
+    }
+
     /// Extract all secret IDs targeted by this effect to validate if they exist.
     pub fn extract_secrets(&self) -> Vec<&str> {
         match self {

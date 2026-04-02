@@ -22,6 +22,8 @@ pub struct GraphNode {
     #[serde(rename = "type")]
     pub node_type: String,
     pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub traits: Vec<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -31,11 +33,21 @@ pub struct GraphNode {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub location: Option<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub inventory: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub tags: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub properties: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub connections: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub alignment: Option<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub members: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub rivals: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub leader: Option<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub goals: Vec<GoalBrief>,
 }
@@ -101,13 +113,19 @@ pub fn build_graph(snapshot: &Snapshot) -> GraphResponse {
                     id: c.id.clone(),
                     node_type: "character".into(),
                     name: c.name.clone().unwrap_or_else(|| c.id.clone()),
+                    description: c.description.clone(),
                     traits: c.traits.clone(),
                     beliefs: c.beliefs.clone(),
                     desires: c.desires.clone(),
                     location: c.location.clone(),
+                    inventory: c.inventory.clone(),
+                    tags: c.tags.clone(),
                     properties: vec![],
+                    connections: vec![],
                     alignment: None,
                     members: vec![],
+                    rivals: vec![],
+                    leader: None,
                     goals,
                 });
 
@@ -140,13 +158,19 @@ pub fn build_graph(snapshot: &Snapshot) -> GraphResponse {
                     id: l.id.clone(),
                     node_type: "location".into(),
                     name: l.name.clone().unwrap_or_else(|| l.id.clone()),
+                    description: l.description.clone(),
                     traits: vec![],
                     beliefs: vec![],
                     desires: vec![],
                     location: None,
+                    inventory: vec![],
+                    tags: l.tags.clone(),
                     properties: l.properties.clone(),
+                    connections: l.connections.clone(),
                     alignment: None,
                     members: vec![],
+                    rivals: vec![],
+                    leader: None,
                     goals: vec![],
                 });
 
@@ -169,13 +193,19 @@ pub fn build_graph(snapshot: &Snapshot) -> GraphResponse {
                     id: f.id.clone(),
                     node_type: "faction".into(),
                     name: f.name.clone().unwrap_or_else(|| f.id.clone()),
+                    description: f.description.clone(),
                     traits: vec![],
                     beliefs: vec![],
                     desires: vec![],
                     location: None,
+                    inventory: vec![],
+                    tags: f.tags.clone(),
                     properties: vec![],
+                    connections: vec![],
                     alignment: f.alignment.clone(),
                     members: f.members.clone(),
+                    rivals: f.rivals.clone(),
+                    leader: f.leader.clone(),
                     goals: vec![],
                 });
 
